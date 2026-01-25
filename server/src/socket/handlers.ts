@@ -12,7 +12,7 @@ import { ActionRateLimiter } from '../utils/rateLimiter.js';
 import { ExponentialBackoffLimiter, ActionSequenceValidator } from '../utils/security.js';
 import { HandRepository } from '../db/repositories/HandRepository.js';
 import { UserRepository } from '../db/repositories/UserRepository.js';
-import { getSession, startPlaying, updateStack } from '../gameWallet/index.js';
+import { completeSession, getSession, startPlaying, updateStack, recordWinnings } from '../gameWallet/index.js';
 import { TURN_TIMEOUT_MS, DISCONNECT_GRACE_MS } from '../config.js';
 import type { Table, Player, HandResult } from '../types/index.js';
 
@@ -170,6 +170,70 @@ async function saveHandHistory(
   } catch (error) {
     console.error('[DB] Failed to save hand history:', error);
   }
+}
+
+async function settleGameWallets(
+  tableManager: TableManager,
+  table: Table,
+  handResult: HandResult,
+  startingStacks: Map<string, number>
+): Promise<void> {
+  const winners = handResult.winners;
+  const totalWin = winners.reduce((sum, w) => sum + w.amount, 0);
+  if (totalWin <= 0) return;
+
+  const losses = table.players
+    .filter((p): p is Player => p !== null)
+    .map((player) => {
+      const startingStack = startingStacks.get(player.id);
+      if (startingStack === undefined) return null;
+      const delta = player.stack - startingStack;
+      return delta < 0 ? { player, loss: -delta } : null;
+    })
+    .filter((entry): entry is { player: Player; loss: number } => entry !== null);
+
+  if (losses.length === 0) return;
+
+  const recordPromises: Promise<void>[] = [];
+
+  for (const loser of losses) {
+    const loserSessionId = tableManager.getGameWalletSessionId(loser.player.id);
+    if (!loserSessionId) continue;
+
+    let allocated = 0;
+    for (let i = 0; i < winners.length; i++) {
+      const winner = winners[i];
+      const winnerSessionId = tableManager.getGameWalletSessionId(winner.playerId);
+      if (!winnerSessionId) continue;
+
+      let amount = 0;
+      if (i === winners.length - 1) {
+        amount = Number((loser.loss - allocated).toFixed(6));
+      } else {
+        amount = Number(((loser.loss * winner.amount) / totalWin).toFixed(6));
+        allocated += amount;
+      }
+
+      if (amount <= 0) continue;
+
+      recordPromises.push(
+        recordWinnings(winnerSessionId, loserSessionId, loser.player.address, amount)
+      );
+    }
+  }
+
+  await Promise.all(recordPromises);
+
+  const updatePromises = table.players
+    .filter((p): p is Player => p !== null)
+    .map((player) => {
+      const sessionId = tableManager.getGameWalletSessionId(player.id);
+      if (!sessionId) return null;
+      return updateStack(sessionId, player.stack);
+    })
+    .filter((promise): promise is Promise<boolean> => promise !== null);
+
+  await Promise.all(updatePromises);
 }
 
 export function setupSocketHandlers(io: Server, tableManager: TableManager): void {
@@ -597,6 +661,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
           // Save hand history
           const startingStacks = handStartingStacks.get(actionData.tableId);
           if (startingStacks) {
+            settleGameWallets(tableManager, table, handResult, startingStacks).catch(console.error);
             saveHandHistory(
               actionData.tableId,
               table,
@@ -631,6 +696,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
             // Save hand history
             const startingStacks = handStartingStacks.get(actionData.tableId);
             if (startingStacks) {
+              settleGameWallets(tableManager, table, handResult, startingStacks).catch(console.error);
               saveHandHistory(
                 actionData.tableId,
                 table,
@@ -790,6 +856,7 @@ function setTurnTimeout(
         // Save hand history
         const startingStacks = handStartingStacks.get(tableId);
         if (startingStacks) {
+          settleGameWallets(tableManager, table, handResult, startingStacks).catch(console.error);
           saveHandHistory(
             tableId,
             table,
@@ -852,6 +919,10 @@ function startNewHand(io: Server, tableManager: TableManager, tableId: string): 
           `[Game] Player ${player.name} is busted (stack: ${player.stack}), kicking from table`
         );
         bustedPlayers.push(player);
+        const gameWalletSessionId = tableManager.getGameWalletSessionId(player.id);
+        if (gameWalletSessionId) {
+          completeSession(gameWalletSessionId, player.stack).catch(console.error);
+        }
 
         // Emit busted event to the player
         io.to(player.socketId).emit('player-busted', {
@@ -865,14 +936,16 @@ function startNewHand(io: Server, tableManager: TableManager, tableId: string): 
           seatIndex: player.seatIndex,
         });
 
-        // Remove player from table
-        table.players[i] = null;
+        // NOTE: We don't set table.players[i] = null here anymore.
+        // tableManager.leaveTable will handle memory cleanup and DB session termination.
       }
     }
 
     // Leave table for busted players (async, don't await)
     for (const player of bustedPlayers) {
-      tableManager.leaveTable(tableId, player.id).catch(console.error);
+      tableManager.leaveTable(tableId, player.id).catch(err => {
+        console.error(`[Game] Failed to process leaveTable for busted player ${player.id}:`, err);
+      });
     }
 
     // Get players with chips who can play

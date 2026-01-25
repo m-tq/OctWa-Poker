@@ -20,7 +20,7 @@ import {
   Gift,
   ExternalLink,
 } from 'lucide-react';
-import { API_URL } from '@/config';
+import { API_URL, OCTRA_EXPLORER } from '@/config';
 
 // Username validation
 const USERNAME_REGEX = /^[a-zA-Z0-9]{3,16}$/;
@@ -43,6 +43,9 @@ interface GameWalletInfo {
   currentStack: number;
   status: 'PENDING' | 'CONFIRMED' | 'PLAYING' | 'SETTLING' | 'COMPLETED' | 'REFUNDED' | 'EXPIRED';
   claimableWinnings: ClaimableWinning[];
+  historyWinnings?: ClaimableWinning[];
+  settlementTxHash?: string;
+  settledAt?: number;
   withdrawableAmount: number;
   createdAt: number;
 }
@@ -461,15 +464,31 @@ export function Dashboard() {
 
         {/* Success/Error Messages */}
         {walletSuccess && (
-          <div className="mb-4 p-3 rounded bg-green-500/20 border border-green-500/30 text-green-400 text-sm flex items-center gap-2">
-            <Check className="w-4 h-4" />
-            {walletSuccess}
+          <div className="mb-4 p-3 rounded bg-green-500/20 border border-green-500/30 text-green-400 text-sm flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Check className="w-4 h-4" />
+              {walletSuccess}
+            </div>
+            <button 
+              onClick={() => setWalletSuccess(null)}
+              className="hover:bg-green-500/20 p-1 rounded-full transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
         {walletError && (
-          <div className="mb-4 p-3 rounded bg-red-500/20 border border-red-500/30 text-red-400 text-sm flex items-center gap-2">
-            <AlertCircle className="w-4 h-4" />
-            {walletError}
+          <div className="mb-4 p-3 rounded bg-red-500/20 border border-red-500/30 text-red-400 text-sm flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {walletError}
+            </div>
+            <button 
+              onClick={() => setWalletError(null)}
+              className="hover:bg-red-500/20 p-1 rounded-full transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
@@ -486,6 +505,7 @@ export function Dashboard() {
           <div className="space-y-4">
             {gameWallets.map((wallet) => {
               const isActive = wallet.status === 'PLAYING' || wallet.status === 'CONFIRMED';
+              const canWithdraw = wallet.status === 'COMPLETED' || isActive;
               const hasWithdrawable = wallet.withdrawableAmount > 0;
               const hasClaimable = wallet.claimableWinnings.length > 0;
               const totalClaimable = wallet.claimableWinnings.reduce((sum, w) => sum + w.amount, 0);
@@ -551,7 +571,7 @@ export function Dashboard() {
                       {wallet.gameWalletAddress.slice(0, 12)}...{wallet.gameWalletAddress.slice(-8)}
                     </code>
                     <a
-                      href={`https://explorer.octra.org/address/${wallet.gameWalletAddress}`}
+                      href={`${OCTRA_EXPLORER}/addresses/${wallet.gameWalletAddress}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:underline"
@@ -561,9 +581,9 @@ export function Dashboard() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 mb-4">
                     {/* Withdraw Button */}
-                    {hasWithdrawable && isActive && (
+                    {hasWithdrawable && canWithdraw && (
                       <Button
                         size="sm"
                         variant="secondary"
@@ -591,10 +611,64 @@ export function Dashboard() {
                       </Button>
                     ))}
 
-                    {!hasWithdrawable && !hasClaimable && isActive && (
+                    {!hasWithdrawable && !hasClaimable && canWithdraw && (
                       <span className="text-xs text-muted py-2">No actions available</span>
                     )}
                   </div>
+
+                  {/* Transaction History */}
+                  {(wallet.settlementTxHash || (wallet.historyWinnings && wallet.historyWinnings.length > 0)) && (
+                    <div className="mt-4 pt-4 border-t border-border/50">
+                      <p className="text-xs font-semibold text-muted mb-2 flex items-center gap-1">
+                        <History className="w-3 h-3" />
+                        Transaction History
+                      </p>
+                      <div className="space-y-2">
+                        {wallet.settlementTxHash && (
+                          <div className="flex items-center justify-between text-xs bg-secondary/30 p-2 rounded">
+                            <div className="flex items-center gap-2">
+                              <Download className="w-3 h-3 text-blue-400" />
+                              <span className="text-foreground">Withdrawal</span>
+                              <span className="text-muted">
+                                {wallet.settledAt ? new Date(wallet.settledAt).toLocaleString() : ''}
+                              </span>
+                            </div>
+                            <a
+                              href={`${OCTRA_EXPLORER}/txs/${wallet.settlementTxHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:text-primary/80 flex items-center gap-1"
+                            >
+                              {wallet.settlementTxHash.slice(0, 8)}...
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        )}
+                        {wallet.historyWinnings?.map((w, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-xs bg-secondary/30 p-2 rounded">
+                            <div className="flex items-center gap-2">
+                              <Gift className="w-3 h-3 text-yellow-400" />
+                              <span className="text-foreground">Claimed {w.amount.toLocaleString()} OCT</span>
+                              <span className="text-muted">
+                                {w.claimedAt ? new Date(w.claimedAt).toLocaleString() : ''}
+                              </span>
+                            </div>
+                            {w.claimTxHash && (
+                              <a
+                                href={`${OCTRA_EXPLORER}/txs/${w.claimTxHash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:text-primary/80 flex items-center gap-1"
+                              >
+                                {w.claimTxHash.slice(0, 8)}...
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

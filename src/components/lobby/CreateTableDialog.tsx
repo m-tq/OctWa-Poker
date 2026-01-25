@@ -65,7 +65,7 @@ export function CreateTableDialog({ open, onClose, onCreate }: CreateTableDialog
       newErrors.bigBlind = 'Big blind must be greater than small blind';
     }
     if (minBuyIn < bigBlind * 10) {
-      newErrors.minBuyIn = `Minimum buy-in must be at least ${bigBlind * 10} (10 big blinds)`;
+      newErrors.minBuyIn = `Minimum buy-in must be at least ${(bigBlind * 10).toFixed(2)} (10 big blinds)`;
     }
     if (maxBuyIn < minBuyIn) {
       newErrors.maxBuyIn = 'Maximum buy-in must be greater than minimum';
@@ -120,7 +120,8 @@ export function CreateTableDialog({ open, onClose, onCreate }: CreateTableDialog
             type="number"
             value={smallBlind}
             onChange={e => setSmallBlind(Number(e.target.value))}
-            min={1}
+            min={0.001}
+            step={0.001}
             error={errors.smallBlind}
           />
           <Input
@@ -128,7 +129,8 @@ export function CreateTableDialog({ open, onClose, onCreate }: CreateTableDialog
             type="number"
             value={bigBlind}
             onChange={e => setBigBlind(Number(e.target.value))}
-            min={1}
+            min={0.001}
+            step={0.001}
             error={errors.bigBlind}
           />
         </div>
@@ -139,7 +141,8 @@ export function CreateTableDialog({ open, onClose, onCreate }: CreateTableDialog
             type="number"
             value={minBuyIn}
             onChange={e => setMinBuyIn(Number(e.target.value))}
-            min={1}
+            min={0.01}
+            step={0.01}
             error={errors.minBuyIn}
           />
           <Input
@@ -147,7 +150,8 @@ export function CreateTableDialog({ open, onClose, onCreate }: CreateTableDialog
             type="number"
             value={maxBuyIn}
             onChange={e => setMaxBuyIn(Number(e.target.value))}
-            min={1}
+            min={0.01}
+            step={0.01}
             error={errors.maxBuyIn}
           />
         </div>

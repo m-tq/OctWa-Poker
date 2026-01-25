@@ -10,7 +10,7 @@ export function Home() {
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] p-8">
       <div className="max-w-2xl text-center">
         <div className="flex justify-center mb-6">
-          <div className="p-4 bg-primary/10 border border-primary/20">
+          <div className="p-4 bg-primary/10">
             <Spade className="w-16 h-16 text-primary" />
           </div>
         </div>

@@ -9,7 +9,7 @@ export function Header() {
   const { connected, username } = useStore();
   
   return (
-    <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4">
+    <header className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-border bg-card/80 backdrop-blur-md flex items-center justify-between px-4">
       <div className="flex items-center gap-6">
         <Link to="/" className="flex items-center gap-2 text-foreground hover:text-primary transition-colors">
           <Spade className="w-6 h-6" />

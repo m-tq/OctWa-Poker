@@ -50,12 +50,12 @@ export function useWallet() {
             if (restoredConn) {
               setConnection(restoredConn);
               
-              // Try to find or request capability automatically
+              // Try to find existing capability (don't request new one - no popup)
               const storedCapId = capability?.id;
               console.log('[useWallet] Trying to restore capability:', storedCapId);
-              const validCap = await getOrRequestCapability(storedCapId);
+              const validCap = await getOrRequestCapability(storedCapId, false);
               if (validCap) {
-                console.log('[useWallet] Capability restored/obtained:', validCap.id);
+                console.log('[useWallet] Capability restored:', validCap.id);
                 setCapability(validCap);
               } else {
                 console.log('[useWallet] No valid capability found, user needs to authorize');
@@ -128,19 +128,17 @@ export function useWallet() {
     let isMounted = true;
 
     const fetchBalance = async () => {
-      console.log('[useWallet] Fetching balance for capability:', capability.id);
       setBalanceLoading(true);
       try {
         const balance = await getBalance(capability.id);
         if (isMounted) {
-          console.log('[useWallet] Balance fetched:', balance);
           setOctBalance(balance);
         }
       } catch (err) {
         const errorMsg = (err as Error).message || '';
         console.error('[useWallet] Failed to fetch balance:', errorMsg);
         
-        // If capability is invalid/expired/not found - try to get new one silently
+        // If capability is invalid/expired/not found - clear it for re-authorization
         if (
           isMounted && (
             errorMsg.includes('not found') ||
@@ -149,26 +147,9 @@ export function useWallet() {
             errorMsg.includes('Capability')
           )
         ) {
-          console.log('[useWallet] Capability invalid, trying to get new one...');
-          try {
-            const newCap = await getOrRequestCapability();
-            if (newCap && isMounted) {
-              console.log('[useWallet] Got new capability:', newCap.id);
-              setCapability(newCap);
-              // Retry balance fetch with new capability
-              const balance = await getBalance(newCap.id);
-              setOctBalance(balance);
-              return;
-            }
-          } catch {
-            // Failed to get new capability, clear for re-authorization
-          }
-          
-          if (isMounted) {
-            console.log('[useWallet] Could not get valid capability, clearing...');
-            setCapability(null);
-            setOctBalance(null);
-          }
+          console.log('[useWallet] Capability invalid, clearing for re-authorization...');
+          setCapability(null);
+          setOctBalance(null);
         }
       } finally {
         if (isMounted) {
@@ -178,12 +159,8 @@ export function useWallet() {
     };
 
     fetchBalance();
-    
-    // Refresh balance every 30 seconds
-    const interval = setInterval(fetchBalance, 30000);
     return () => {
       isMounted = false;
-      clearInterval(interval);
     };
   }, [capability, sdkInitialized, setOctBalance, setBalanceLoading, setCapability]);
 
@@ -197,12 +174,24 @@ export function useWallet() {
       }
       const conn = await connect();
       setConnection(conn);
+      
+      // Auto-authorize after connection
+      if (conn) {
+        try {
+          const cap = await requestCapability();
+          setCapability(cap);
+        } catch (capErr) {
+          console.error('[useWallet] Auto-authorization failed:', capErr);
+          // If auto-auth fails, user will still see the 'Authorize' button in the UI
+          // but we don't treat it as a critical connection error
+        }
+      }
     } catch (err) {
       addError('CONNECTION_FAILED', (err as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [setConnection, addError]);
+  }, [setConnection, setCapability, addError]);
 
   const handleAuthorize = useCallback(async () => {
     setLoading(true);

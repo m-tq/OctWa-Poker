@@ -1,12 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Table, Player, CreateTableData, JoinTableData } from '../types/index.js';
 import { UserRepository, TableRepository, TransactionRepository } from '../db/repositories/index.js';
+import { completeSession } from '../gameWallet/index.js';
 
 export class TableManager {
   private tables: Map<string, Table> = new Map();
   private playerSessions: Map<string, { socketId: string; tableId: string | null }> = new Map();
   // Map playerId to database userId
   private playerUserMap: Map<string, string> = new Map();
+  private playerGameWalletSessions: Map<string, string> = new Map();
 
   async initialize(): Promise<void> {
     // Load active tables from database on startup
@@ -166,6 +168,9 @@ export class TableManager {
     table.players[data.seatIndex] = player;
     this.playerSessions.set(player.id, { socketId, tableId: data.tableId });
     this.playerUserMap.set(player.id, user.id);
+    if (data.escrowSessionId) {
+      this.playerGameWalletSessions.set(player.id, data.escrowSessionId);
+    }
 
     return { success: true, player };
   }
@@ -184,26 +189,39 @@ export class TableManager {
     const player = table.players[playerIndex]!;
     const stack = player.stack;
     const userId = this.playerUserMap.get(playerId);
+    const gameWalletSessionId = this.playerGameWalletSessions.get(playerId);
 
-    // Update database
-    if (userId) {
-      const session = await TableRepository.getActiveSession(tableId, userId);
-      if (session) {
-        await TableRepository.endSession(session.id, stack);
+    try {
+      // Update database
+      if (userId) {
+        const session = await TableRepository.getActiveSession(tableId, userId);
+        if (session) {
+          await TableRepository.endSession(session.id, stack);
+        }
+
+        // Record cash-out transaction
+        await TransactionRepository.create({
+          userId,
+          tableId,
+          type: 'cash_out',
+          amount: stack,
+        });
       }
 
-      // Record cash-out transaction
-      await TransactionRepository.create({
-        userId,
-        tableId,
-        type: 'cash_out',
-        amount: stack,
-      });
+      if (gameWalletSessionId) {
+        await completeSession(gameWalletSessionId, stack);
+      }
+    } catch (error) {
+      console.error(`[TableManager] Error during leaveTable DB updates for player ${playerId}:`, error);
+      // We continue to remove the player from memory even if DB updates fail
+      // to prevent "stuck" seats.
+    } finally {
+      // Always remove from memory to prevent stuck seats
+      table.players[playerIndex] = null;
+      this.playerSessions.delete(playerId);
+      this.playerUserMap.delete(playerId);
+      this.playerGameWalletSessions.delete(playerId);
     }
-
-    table.players[playerIndex] = null;
-    this.playerSessions.delete(playerId);
-    this.playerUserMap.delete(playerId);
 
     // NOTE: Don't remove table when empty - keep it available for others to join
     // Table will only be removed manually or after inactivity timeout
@@ -267,5 +285,9 @@ export class TableManager {
   // Get user ID for a player
   getUserId(playerId: string): string | undefined {
     return this.playerUserMap.get(playerId);
+  }
+
+  getGameWalletSessionId(playerId: string): string | undefined {
+    return this.playerGameWalletSessions.get(playerId);
   }
 }

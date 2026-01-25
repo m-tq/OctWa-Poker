@@ -21,6 +21,7 @@ import type {
 
 // Session expiry time (10 minutes for deposit)
 const SESSION_EXPIRY_MS = 10 * 60 * 1000;
+const TX_FEE_RESERVE = 0.001;
 
 /**
  * Generate unique nonce
@@ -230,6 +231,32 @@ export async function updateStack(sessionId: string, newStack: number): Promise<
 }
 
 /**
+ * Mark session as completed when player leaves table
+ */
+export async function completeSession(sessionId: string, currentStack?: number): Promise<boolean> {
+  const updateData: { status: 'COMPLETED'; updatedAt: Date; currentStack?: number } = {
+    status: 'COMPLETED',
+    updatedAt: new Date(),
+  };
+
+  if (typeof currentStack === 'number') {
+    updateData.currentStack = currentStack;
+  }
+
+  const result = await db.update(gameWalletSessions)
+    .set(updateData)
+    .where(and(
+      eq(gameWalletSessions.id, sessionId),
+      or(
+        eq(gameWalletSessions.status, 'PLAYING'),
+        eq(gameWalletSessions.status, 'CONFIRMED')
+      )
+    ));
+
+  return result.changes > 0;
+}
+
+/**
  * Record winnings from another player
  * Called when a hand ends and chips are transferred
  */
@@ -267,6 +294,16 @@ async function getEncryptedKey(sessionId: string): Promise<EncryptedGameWalletKe
   };
 }
 
+async function getPendingLossAmount(sessionId: string): Promise<number> {
+  const losses = await db.select().from(claimableWinnings)
+    .where(and(
+      eq(claimableWinnings.loserSessionId, sessionId),
+      eq(claimableWinnings.claimed, false)
+    ));
+
+  return losses.reduce((sum, loss) => sum + loss.amount, 0);
+}
+
 /**
  * Withdraw funds from game wallet
  * Player can withdraw their remaining balance
@@ -288,8 +325,13 @@ export async function withdrawFunds(
     return { success: false, error: 'Not authorized to withdraw from this session' };
   }
 
-  if (session.status !== 'PLAYING' && session.status !== 'CONFIRMED') {
+  if (session.status !== 'PLAYING' && session.status !== 'CONFIRMED' && session.status !== 'COMPLETED') {
     return { success: false, error: `Cannot withdraw from session in ${session.status} status` };
+  }
+
+  const pendingLossAmount = await getPendingLossAmount(sessionId);
+  if (pendingLossAmount > 0) {
+    return { success: false, error: 'Pending loss claims must be settled before withdrawal' };
   }
 
   // Get actual balance from chain
@@ -303,12 +345,14 @@ export async function withdrawFunds(
   }
 
   // If specific amount requested, validate it
-  const amountToWithdraw = requestedAmount 
+  const grossAmount = requestedAmount 
     ? Math.min(requestedAmount, withdrawableAmount)
     : withdrawableAmount;
 
+  const amountToWithdraw = grossAmount - TX_FEE_RESERVE;
+
   if (amountToWithdraw <= 0) {
-    return { success: false, error: 'Invalid withdrawal amount' };
+    return { success: false, error: 'Withdrawal amount too small after fee reserve' };
   }
 
   // Get encrypted key
@@ -333,8 +377,8 @@ export async function withdrawFunds(
     );
 
     // Update session
-    const newStack = session.currentStack - amountToWithdraw;
-    const newStatus = newStack <= 0 ? 'COMPLETED' : 'PLAYING';
+    const newStack = session.currentStack - grossAmount;
+    const newStatus = newStack <= 0 ? 'COMPLETED' : session.status;
 
     await db.update(gameWalletSessions)
       .set({
@@ -354,7 +398,7 @@ export async function withdrawFunds(
   } catch (error) {
     // Revert status on failure
     await db.update(gameWalletSessions)
-      .set({ status: 'PLAYING', updatedAt: new Date() })
+      .set({ status: session.status, updatedAt: new Date() })
       .where(eq(gameWalletSessions.id, sessionId));
 
     return { success: false, error: `Withdrawal failed: ${(error as Error).message}` };
@@ -406,6 +450,11 @@ export async function claimWinnings(
     return { success: false, error: `Insufficient funds in loser's game wallet (${loserBalance} < ${winning.amount})` };
   }
 
+  const transferAmount = winning.amount - TX_FEE_RESERVE;
+  if (transferAmount <= 0) {
+    return { success: false, error: 'Claim amount too small after fee reserve' };
+  }
+
   // Get loser's encrypted key
   const loserKey = await getEncryptedKey(loserSessionId);
   if (!loserKey) {
@@ -419,7 +468,7 @@ export async function claimWinnings(
       loserSessionId,
       loserSession.gameWalletAddress,
       playerAddress,
-      winning.amount
+      transferAmount
     );
 
     // Mark as claimed
@@ -431,7 +480,18 @@ export async function claimWinnings(
       })
       .where(eq(claimableWinnings.id, winning.id));
 
-    console.log(`[GAME-WALLET] Winnings claimed: ${winning.amount} OCT from ${loserSessionId} to ${playerAddress}`);
+    const updatedLoserStack = Math.max(0, loserSession.currentStack - winning.amount);
+    const updatedLoserStatus = updatedLoserStack <= 0 ? 'COMPLETED' : loserSession.status;
+
+    await db.update(gameWalletSessions)
+      .set({
+        currentStack: updatedLoserStack,
+        status: updatedLoserStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(gameWalletSessions.id, loserSessionId));
+
+    console.log(`[GAME-WALLET] Winnings claimed: ${transferAmount} OCT from ${loserSessionId} to ${playerAddress}`);
     console.log(`[GAME-WALLET]   TxHash: ${txHash}`);
 
     return { success: true, txHash };
@@ -454,6 +514,17 @@ export async function getSession(sessionId: string): Promise<GameWalletSession |
       eq(claimableWinnings.claimed, false)
     ));
 
+  const visibleWinnings = winnings
+    .map((w: any) => ({
+      fromSessionId: w.loserSessionId,
+      fromAddress: w.loserAddress,
+      amount: Math.max(0, w.amount - TX_FEE_RESERVE),
+      claimed: w.claimed,
+      claimTxHash: w.claimTxHash || undefined,
+      claimedAt: w.claimedAt?.getTime(),
+    }))
+    .filter((w: any) => w.amount > 0);
+
   return {
     sessionId: session.id,
     playerAddress: session.playerAddress,
@@ -472,14 +543,7 @@ export async function getSession(sessionId: string): Promise<GameWalletSession |
     finalStack: session.finalStack || undefined,
     settlementTxHash: session.settlementTxHash || undefined,
     settledAt: session.settledAt?.getTime(),
-    claimableWinnings: winnings.map(w => ({
-      fromSessionId: w.loserSessionId,
-      fromAddress: w.loserAddress,
-      amount: w.amount,
-      claimed: w.claimed,
-      claimTxHash: w.claimTxHash || undefined,
-      claimedAt: w.claimedAt?.getTime(),
-    })),
+    claimableWinnings: visibleWinnings,
     status: session.status as GameWalletStatus,
     createdAt: session.createdAt.getTime(),
     updatedAt: session.updatedAt.getTime(),
@@ -525,12 +589,48 @@ export async function getPlayerGameWallets(playerAddress: string): Promise<Playe
         eq(claimableWinnings.claimed, false)
       ));
 
+    const pendingLossAmount = await getPendingLossAmount(session.id);
+
     // Get actual balance from chain for active sessions
     let withdrawableAmount = 0;
-    if (session.status === 'PLAYING' || session.status === 'CONFIRMED') {
+    if (session.status === 'PLAYING' || session.status === 'CONFIRMED' || session.status === 'COMPLETED') {
       const actualBalance = await getOctraBalance(session.gameWalletAddress);
-      withdrawableAmount = Math.min(session.currentStack, actualBalance);
+      withdrawableAmount = Math.min(session.currentStack, actualBalance) - TX_FEE_RESERVE;
+      if (withdrawableAmount < 0) {
+        withdrawableAmount = 0;
+      }
+      if (pendingLossAmount > 0) {
+        withdrawableAmount = 0;
+      }
     }
+
+    // Get claimed winnings (history)
+    const claimedWinnings = await db.select().from(claimableWinnings)
+      .where(and(
+        eq(claimableWinnings.winnerSessionId, session.id),
+        eq(claimableWinnings.claimed, true)
+      ));
+
+    const visibleWinnings = winnings
+      .map((w: any) => ({
+        fromSessionId: w.loserSessionId,
+        fromAddress: w.loserAddress,
+        amount: Math.max(0, w.amount - TX_FEE_RESERVE),
+        claimed: w.claimed,
+        claimTxHash: w.claimTxHash || undefined,
+        claimedAt: w.claimedAt?.getTime(),
+      }))
+      .filter((w: any) => w.amount > 0);
+
+    const historyWinnings = claimedWinnings
+      .map((w: any) => ({
+        fromSessionId: w.loserSessionId,
+        fromAddress: w.loserAddress,
+        amount: Math.max(0, w.amount - TX_FEE_RESERVE),
+        claimed: w.claimed,
+        claimTxHash: w.claimTxHash || undefined,
+        claimedAt: w.claimedAt?.getTime(),
+      }));
 
     result.push({
       sessionId: session.id,
@@ -539,14 +639,10 @@ export async function getPlayerGameWallets(playerAddress: string): Promise<Playe
       buyInAmount: session.buyInAmount,
       currentStack: session.currentStack,
       status: session.status as GameWalletStatus,
-      claimableWinnings: winnings.map(w => ({
-        fromSessionId: w.loserSessionId,
-        fromAddress: w.loserAddress,
-        amount: w.amount,
-        claimed: w.claimed,
-        claimTxHash: w.claimTxHash || undefined,
-        claimedAt: w.claimedAt?.getTime(),
-      })),
+      claimableWinnings: visibleWinnings,
+      historyWinnings,
+      settlementTxHash: session.settlementTxHash || undefined,
+      settledAt: session.settledAt?.getTime(),
       withdrawableAmount,
       createdAt: session.createdAt.getTime(),
     });

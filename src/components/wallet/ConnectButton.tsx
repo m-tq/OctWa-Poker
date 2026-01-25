@@ -20,7 +20,7 @@ export function ConnectButton() {
   if (connected && connection) {
     const truncatedAddress = `${connection.walletPubKey.slice(0, 6)}...${connection.walletPubKey.slice(-4)}`;
     
-    // Need authorization
+    // Need authorization (fallback if auto-auth failed)
     if (step === 'authorize') {
       return (
         <div className="flex items-center gap-3">
@@ -28,7 +28,7 @@ export function ConnectButton() {
             <Wallet className="w-4 h-4 text-muted" />
             <span className="text-sm text-foreground">{truncatedAddress}</span>
           </div>
-          <Button onClick={handleAuthorize} loading={loading} size="sm">
+          <Button onClick={handleAuthorize} loading={loading} size="sm" variant="primary">
             <Shield className="w-4 h-4 mr-2" />
             Authorize
           </Button>

@@ -9,9 +9,9 @@ import { isSafeAmount, sanitizePlayerName } from './security.js';
 // Validation constants
 const MAX_TABLE_NAME_LENGTH = 50;
 const MAX_PLAYER_NAME_LENGTH = 30;
-const MIN_BLIND = 1;
+const MIN_BLIND = 0.001;
 const MAX_BLIND = 1000000;
-const MIN_BUY_IN = 1;
+const MIN_BUY_IN = 0.01;
 const MAX_BUY_IN = 100000000;
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 8;
@@ -40,12 +40,21 @@ function isPositiveInteger(value: unknown): value is number {
   );
 }
 
-// Validate non-negative number with safe bounds
+// Validate positive number (allows decimals) with safe bounds
+function isPositiveNumber(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    value <= Number.MAX_SAFE_INTEGER
+  );
+}
+
+// Validate non-negative number with safe bounds (allows decimals)
 function isNonNegativeNumber(value: unknown): value is number {
   return (
     typeof value === 'number' &&
     Number.isFinite(value) &&
-    Number.isInteger(value) && // Must be integer for chip amounts
     value >= 0 &&
     value <= Number.MAX_SAFE_INTEGER
   );
@@ -86,23 +95,23 @@ export function validateCreateTableData(data: unknown): ValidationResult<CreateT
     return { valid: false, error: 'Invalid table name' };
   }
 
-  if (!isPositiveInteger(d.smallBlind) || d.smallBlind < MIN_BLIND || d.smallBlind > MAX_BLIND) {
+  if (!isPositiveNumber(d.smallBlind) || d.smallBlind < MIN_BLIND || d.smallBlind > MAX_BLIND) {
     return { valid: false, error: 'Invalid small blind' };
   }
 
-  if (!isPositiveInteger(d.bigBlind) || d.bigBlind < MIN_BLIND || d.bigBlind > MAX_BLIND) {
+  if (!isPositiveNumber(d.bigBlind) || d.bigBlind < MIN_BLIND || d.bigBlind > MAX_BLIND) {
     return { valid: false, error: 'Invalid big blind' };
   }
 
-  if (d.bigBlind < d.smallBlind * 2) {
-    return { valid: false, error: 'Big blind must be at least 2x small blind' };
+  if (d.bigBlind < d.smallBlind) {
+    return { valid: false, error: 'Big blind must be >= small blind' };
   }
 
-  if (!isPositiveInteger(d.minBuyIn) || d.minBuyIn < MIN_BUY_IN || d.minBuyIn > MAX_BUY_IN) {
+  if (!isPositiveNumber(d.minBuyIn) || d.minBuyIn < MIN_BUY_IN || d.minBuyIn > MAX_BUY_IN) {
     return { valid: false, error: 'Invalid min buy-in' };
   }
 
-  if (!isPositiveInteger(d.maxBuyIn) || d.maxBuyIn < MIN_BUY_IN || d.maxBuyIn > MAX_BUY_IN) {
+  if (!isPositiveNumber(d.maxBuyIn) || d.maxBuyIn < MIN_BUY_IN || d.maxBuyIn > MAX_BUY_IN) {
     return { valid: false, error: 'Invalid max buy-in' };
   }
 
@@ -138,7 +147,7 @@ export function validateJoinTableData(data: unknown): ValidationResult<JoinTable
     return { valid: false, error: 'Invalid table ID' };
   }
 
-  if (!isPositiveInteger(d.buyIn) || d.buyIn > MAX_BUY_IN) {
+  if (!isPositiveNumber(d.buyIn) || d.buyIn > MAX_BUY_IN) {
     return { valid: false, error: 'Invalid buy-in amount' };
   }
 

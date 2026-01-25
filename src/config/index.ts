@@ -11,16 +11,16 @@ export const POKER_METHODS = ['get_balance', 'send_transaction'] as const;
 
 // Game Configuration - Fallback defaults (actual values fetched from server)
 export const DEFAULT_BLINDS = {
-  small: 10,
-  big: 20,
+  small: 0.1,
+  big: 0.2,
 };
 
 export const DEFAULT_BUY_IN = {
-  min: 400,
-  max: 2000,
+  min: 2,
+  max: 4,
 };
 
-export const MAX_PLAYERS = 8;
+export const MAX_PLAYERS = 4;
 
 export const TURN_TIMEOUT_SECONDS = 30;
 

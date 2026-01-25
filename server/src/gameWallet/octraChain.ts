@@ -49,10 +49,10 @@ export async function getOctraBalance(address: string): Promise<number> {
   try {
     const response = await fetch(`${OCTRA_RPC_URL}/balance/${address}`);
     if (!response.ok) return 0;
-    const data = (await response.json()) as { balance?: number; amount?: number };
-    // Balance is in micro units (MU), convert to OCT
-    const balanceMu = data.balance ?? data.amount ?? 0;
-    return balanceMu / 1_000_000;
+    const data = (await response.json()) as { balance?: string | number; amount?: string | number };
+    // Balance from RPC is already in OCT (might be string or number)
+    const balance = data.balance ?? data.amount ?? 0;
+    return typeof balance === 'string' ? parseFloat(balance) : balance;
   } catch (error) {
     console.error(`[OCTRA] Failed to get balance for ${address}:`, error);
     return 0;
@@ -89,18 +89,20 @@ export interface VerificationResult {
 
 /**
  * Helper to validate transaction details
+ * NOTE: amount parameter is already in OCT (not micro units)
+ * The RPC returns "amount" in OCT and "amount_raw" in micro units
  */
 function validateTxDetails(
   from: string,
   to: string,
-  amountMu: number,
+  amountOct: number,
   expectedTo: string,
   expectedAmount: number,
   expectedFrom?: string,
   message?: string
 ): { valid: boolean; error?: string; details?: { from: string; to: string; amount: number; message?: string } } {
-  // Convert from micro units to OCT
-  const amount = amountMu / 1_000_000;
+  // Amount is already in OCT (from parsed_tx.amount field)
+  const amount = amountOct;
 
   // SECURITY: Verify sender address matches expected
   if (expectedFrom && from !== expectedFrom) {
@@ -192,11 +194,12 @@ export async function verifyOctTransaction(
 
         // Validate transaction details (only once)
         if (!txValidated && txData.parsed_tx) {
-          const amountMu = parseFloat(txData.parsed_tx.amount);
+          // parsed_tx.amount is already in OCT (not micro units)
+          const amountOct = parseFloat(txData.parsed_tx.amount);
           const validation = validateTxDetails(
             txData.parsed_tx.from,
             txData.parsed_tx.to,
-            amountMu,
+            amountOct,
             expectedTo,
             expectedAmount,
             expectedFrom,
@@ -210,7 +213,7 @@ export async function verifyOctTransaction(
               extractedData: {
                 from: txData.parsed_tx.from,
                 to: txData.parsed_tx.to,
-                amount: amountMu / 1_000_000,
+                amount: amountOct,
                 message: txData.parsed_tx.message,
               },
             };
@@ -254,12 +257,15 @@ export async function verifyOctTransaction(
             const pendingTx = stagingData.staged_transactions.find((tx) => tx.hash === txHash);
             if (pendingTx) {
               // Validate details from staging (only once)
+              // NOTE: staging amount might be in micro units, need to check
               if (!txValidated) {
-                const amountMu = parseFloat(pendingTx.amount);
+                // Staging returns amount in micro units (raw), convert to OCT
+                const amountRaw = parseFloat(pendingTx.amount);
+                const amountOct = amountRaw >= 1000 ? amountRaw / 1_000_000 : amountRaw; // Handle both formats
                 const validation = validateTxDetails(
                   pendingTx.from,
                   pendingTx.to,
-                  amountMu,
+                  amountOct,
                   expectedTo,
                   expectedAmount,
                   expectedFrom,
@@ -273,7 +279,7 @@ export async function verifyOctTransaction(
                     extractedData: {
                       from: pendingTx.from,
                       to: pendingTx.to,
-                      amount: amountMu / 1_000_000,
+                      amount: amountOct,
                       message: pendingTx.message,
                     },
                   };

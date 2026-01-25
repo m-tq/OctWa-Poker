@@ -114,9 +114,13 @@ export async function findValidCapability(storedCapabilityId?: string): Promise<
 
 /**
  * Get or request capability
- * First tries to find existing valid capability, then requests new one if needed
+ * First tries to find existing valid capability
+ * If requestIfMissing is true, will request new capability if none found
  */
-export async function getOrRequestCapability(storedCapabilityId?: string): Promise<Capability | null> {
+export async function getOrRequestCapability(
+  storedCapabilityId?: string,
+  requestIfMissing: boolean = false
+): Promise<Capability | null> {
   // Check cached capability
   if (cachedCapability && cachedCapability.expiresAt > Date.now()) {
     return cachedCapability;
@@ -128,13 +132,17 @@ export async function getOrRequestCapability(storedCapabilityId?: string): Promi
     return existingCap;
   }
 
-  // Request new capability
-  try {
-    return await requestCapability();
-  } catch (err) {
-    console.error('[SDK] Failed to request capability:', err);
-    return null;
+  // Only request new capability if explicitly asked
+  if (requestIfMissing) {
+    try {
+      return await requestCapability();
+    } catch (err) {
+      console.error('[SDK] Failed to request capability:', err);
+      return null;
+    }
   }
+
+  return null;
 }
 
 export async function invoke(request: InvocationRequest): Promise<InvocationResult> {
@@ -192,12 +200,18 @@ export async function getBalance(capabilityId: string): Promise<number> {
 export async function sendTransaction(
   capabilityId: string,
   to: string,
-  amount: number
+  amount: number,
+  message?: string
 ): Promise<{ txHash: string }> {
+  const payload: { to: string; amount: number; message?: string } = { to, amount };
+  if (message) {
+    payload.message = message;
+  }
+
   const result = await invoke({
     capabilityId,
     method: 'send_transaction',
-    payload: new TextEncoder().encode(JSON.stringify({ to, amount })),
+    payload: new TextEncoder().encode(JSON.stringify(payload)),
   });
 
   if (!result.success) {

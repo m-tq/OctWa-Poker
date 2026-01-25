@@ -129,6 +129,9 @@ export interface PlayerGameWalletInfo {
   currentStack: number;
   status: GameWalletStatus;
   claimableWinnings: ClaimableWinning[];
+  historyWinnings?: ClaimableWinning[];
+  settlementTxHash?: string;
+  settledAt?: number;
   withdrawableAmount: number;
   createdAt: number;
 }

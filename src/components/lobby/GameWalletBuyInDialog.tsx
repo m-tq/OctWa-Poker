@@ -3,6 +3,8 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { Slider } from '@/components/ui/Slider';
 import { API_URL } from '@/config';
+import { useStore } from '@/store';
+import { sendTransaction, getOrRequestCapability } from '@/sdk/octra';
 import type { Table } from '@/types/game';
 
 interface BuyInQuote {
@@ -26,7 +28,7 @@ interface GameWalletBuyInDialogProps {
   gameWalletEnabled?: boolean;
 }
 
-type Step = 'select' | 'quote' | 'transfer' | 'verify';
+type Step = 'select' | 'sending' | 'verifying';
 
 export function GameWalletBuyInDialog({
   open,
@@ -46,8 +48,10 @@ export function GameWalletBuyInDialog({
   const [quote, setQuote] = useState<BuyInQuote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [txHash, setTxHash] = useState('');
-  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
+
+  // Get capability from store
+  const capability = useStore((state) => state.capability);
 
   // Reset state when dialog opens/closes
   useEffect(() => {
@@ -55,31 +59,11 @@ export function GameWalletBuyInDialog({
       setStep('select');
       setQuote(null);
       setQuoteError(null);
-      setTxHash('');
+      setStatusMessage('');
       setBuyIn(table?.minBuyIn ?? 0);
       setSelectedSeat(null);
     }
   }, [open, table?.minBuyIn]);
-
-  // Countdown timer for quote expiry
-  useEffect(() => {
-    if (!quote) return;
-
-    const updateTimer = () => {
-      const remaining = Math.max(0, Math.floor((quote.expiresAt - Date.now()) / 1000));
-      setTimeRemaining(remaining);
-
-      if (remaining === 0) {
-        setQuoteError('Quote expired. Please try again.');
-        setStep('select');
-        setQuote(null);
-      }
-    };
-
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [quote]);
 
   if (!table) return null;
 
@@ -91,15 +75,17 @@ export function GameWalletBuyInDialog({
   const maxBuyIn = Math.min(table.maxBuyIn, walletBalance);
   const canAfford = walletBalance >= minBuyIn;
 
-  // Step 1: Get quote from server
-  const handleGetQuote = async () => {
+  // Main flow: Get quote → Send transaction via SDK → Verify on backend
+  const handleBuyIn = async () => {
     if (selectedSeat === null) return;
 
     setIsLoading(true);
     setQuoteError(null);
+    setStatusMessage('Getting game wallet...');
 
     try {
-      const response = await fetch(`${API_URL}/api/game-wallet/quote`, {
+      // Step 1: Get quote from server
+      const quoteResponse = await fetch(`${API_URL}/api/game-wallet/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -111,53 +97,67 @@ export function GameWalletBuyInDialog({
         }),
       });
 
-      const data = await response.json();
+      const quoteData = await quoteResponse.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to get quote');
+      if (!quoteResponse.ok) {
+        throw new Error(quoteData.error || 'Failed to get quote');
       }
 
-      setQuote(data.quote);
-      setStep('quote');
-    } catch (err) {
-      setQuoteError((err as Error).message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      const quoteInfo: BuyInQuote = quoteData.quote;
+      setQuote(quoteInfo);
+      setStep('sending');
+      setStatusMessage('Sending OCT to game wallet...');
 
-  // Step 2: User confirms they've sent the transaction
-  const handleConfirmTransfer = () => {
-    setStep('transfer');
-  };
+      // Step 2: Get or request capability (will show popup if needed)
+      let cap = capability;
+      if (!cap || cap.expiresAt < Date.now()) {
+        setStatusMessage('Requesting wallet authorization...');
+        cap = await getOrRequestCapability(capability?.id, true); // Request if missing
+        if (!cap) {
+          throw new Error('Failed to get wallet capability. Please reconnect wallet.');
+        }
+      }
 
-  // Step 3: Verify the transaction
-  const handleVerifyDeposit = async () => {
-    if (!quote || !txHash.trim()) return;
+      // Step 3: Send transaction via SDK with encoded message for validation
+      setStatusMessage('Please confirm transaction in your wallet...');
+      const txResult = await sendTransaction(
+        cap.id,
+        quoteInfo.gameWalletAddress,
+        quoteInfo.amount,
+        quoteInfo.encodedMessage // Include message for ownership validation
+      );
 
-    setIsLoading(true);
-    setQuoteError(null);
+      const txHash = txResult.txHash;
+      console.log('[GameWalletBuyIn] Transaction sent:', txHash);
 
-    try {
-      const response = await fetch(`${API_URL}/api/game-wallet/verify`, {
+      // Step 4: Verify the transaction on backend
+      setStep('verifying');
+      setStatusMessage('Verifying deposit on blockchain...');
+
+      const verifyResponse = await fetch(`${API_URL}/api/game-wallet/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: quote.sessionId,
-          txHash: txHash.trim(),
+          sessionId: quoteInfo.sessionId,
+          txHash: txHash,
         }),
       });
 
-      const data = await response.json();
+      const verifyData = await verifyResponse.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Verification failed');
+      if (!verifyResponse.ok) {
+        throw new Error(verifyData.error || 'Verification failed');
       }
 
       // Success! Join the table
-      onConfirm(buyIn, selectedSeat!, quote.sessionId);
+      setStatusMessage('Success! Joining table...');
+      onConfirm(buyIn, selectedSeat, quoteInfo.sessionId);
     } catch (err) {
-      setQuoteError((err as Error).message);
+      const errorMessage = (err as Error).message;
+      console.error('[GameWalletBuyIn] Error:', errorMessage);
+      setQuoteError(errorMessage);
+      setStep('select');
+      setStatusMessage('');
     } finally {
       setIsLoading(false);
     }
@@ -167,16 +167,6 @@ export function GameWalletBuyInDialog({
   const handleLegacyConfirm = () => {
     if (selectedSeat === null || isJoining) return;
     onConfirm(buyIn, selectedSeat, '');
-  };
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
   };
 
   return (
@@ -189,7 +179,7 @@ export function GameWalletBuyInDialog({
           </div>
         )}
 
-        {/* Step 1: Select amount and seat */}
+        {/* Step: Select amount and seat */}
         {step === 'select' && (
           <>
             {/* Table Info */}
@@ -280,10 +270,10 @@ export function GameWalletBuyInDialog({
               </Button>
               {gameWalletEnabled ? (
                 <Button
-                  onClick={handleGetQuote}
+                  onClick={handleBuyIn}
                   disabled={!canAfford || selectedSeat === null || isLoading}
                 >
-                  {isLoading ? 'Getting Quote...' : 'Get Game Wallet'}
+                  {isLoading ? 'Processing...' : 'Buy In with OCT'}
                 </Button>
               ) : (
                 <Button
@@ -297,89 +287,68 @@ export function GameWalletBuyInDialog({
           </>
         )}
 
-        {/* Step 2: Show quote and game wallet address */}
-        {step === 'quote' && quote && (
-          <>
-            <div className="bg-primary/10 border border-primary p-4 text-center">
-              <p className="text-sm text-muted mb-2">Send exactly</p>
-              <p className="text-2xl font-bold text-primary">{quote.amount} OCT</p>
-              <p className="text-sm text-muted mt-2">to your game wallet below</p>
+        {/* Step: Sending/Verifying - Show progress */}
+        {(step === 'sending' || step === 'verifying') && (
+          <div className="py-8 text-center">
+            {/* Loading spinner */}
+            <div className="flex justify-center mb-4">
+              <svg
+                className="w-12 h-12 text-primary animate-spin"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
             </div>
 
-            <div className="bg-secondary p-3">
-              <label className="text-xs text-muted block mb-1">Game Wallet Address</label>
-              <div className="flex items-center gap-2">
-                <code className="text-xs text-foreground break-all flex-1">{quote.gameWalletAddress}</code>
+            {/* Status message */}
+            <p className="text-foreground font-medium mb-2">{statusMessage}</p>
+
+            {/* Quote info */}
+            {quote && (
+              <div className="bg-secondary p-3 text-sm mt-4 text-left rounded">
+                <div className="flex justify-between mb-1">
+                  <span className="text-muted">Amount:</span>
+                  <span className="text-foreground font-medium">{quote.amount} OCT</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted">Game Wallet:</span>
+                  <span className="text-foreground text-xs font-mono truncate max-w-[180px]">
+                    {quote.gameWalletAddress}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Cancel button (only during sending, not verifying) */}
+            {step === 'sending' && !isLoading && (
+              <div className="mt-6">
                 <Button
                   variant="secondary"
-                  size="sm"
-                  onClick={() => copyToClipboard(quote.gameWalletAddress)}
+                  onClick={() => {
+                    setStep('select');
+                    setQuote(null);
+                    setStatusMessage('');
+                  }}
                 >
-                  Copy
+                  Cancel
                 </Button>
               </div>
-            </div>
-
-            <div className="bg-secondary p-3">
-              <label className="text-xs text-muted block mb-1">Message Payload (include in memo)</label>
-              <div className="flex items-center gap-2">
-                <code className="text-xs text-foreground break-all flex-1">{quote.encodedMessage}</code>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => copyToClipboard(quote.encodedMessage)}
-                >
-                  Copy
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex justify-between text-sm">
-              <span className="text-muted">Time Remaining:</span>
-              <span className={`font-medium ${timeRemaining < 60 ? 'text-destructive' : 'text-foreground'}`}>
-                {formatTime(timeRemaining)}
-              </span>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="secondary" onClick={() => setStep('select')}>
-                Back
-              </Button>
-              <Button onClick={handleConfirmTransfer}>I've Sent the Transaction</Button>
-            </div>
-          </>
-        )}
-
-        {/* Step 3: Enter transaction hash */}
-        {step === 'transfer' && quote && (
-          <>
-            <div className="bg-secondary p-3 text-sm">
-              <p className="text-muted mb-2">Enter the transaction hash to verify your deposit:</p>
-              <input
-                type="text"
-                value={txHash}
-                onChange={(e) => setTxHash(e.target.value)}
-                placeholder="Transaction hash..."
-                className="w-full p-2 bg-background border border-border text-foreground text-sm"
-              />
-            </div>
-
-            <div className="flex justify-between text-sm">
-              <span className="text-muted">Time Remaining:</span>
-              <span className={`font-medium ${timeRemaining < 60 ? 'text-destructive' : 'text-foreground'}`}>
-                {formatTime(timeRemaining)}
-              </span>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="secondary" onClick={() => setStep('quote')} disabled={isLoading}>
-                Back
-              </Button>
-              <Button onClick={handleVerifyDeposit} disabled={!txHash.trim() || isLoading}>
-                {isLoading ? 'Verifying...' : 'Verify Deposit'}
-              </Button>
-            </div>
-          </>
+            )}
+          </div>
         )}
       </div>
     </Dialog>
