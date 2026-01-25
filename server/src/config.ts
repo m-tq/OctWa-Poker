@@ -1,4 +1,14 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables based on NODE_ENV
+const envPath = process.env.NODE_ENV === 'production' 
+  ? path.resolve(process.cwd(), '.env.production')
+  : path.resolve(process.cwd(), '.env');
+
+dotenv.config({ path: envPath });
+
+console.log(`[CONFIG] Loading environment from: ${envPath}`);
 
 // ===========================================
 // Environment Variable Validation
