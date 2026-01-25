@@ -1,14 +1,22 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-// Load environment variables based on NODE_ENV
-const envPath = process.env.NODE_ENV === 'production' 
-  ? path.resolve(process.cwd(), '.env.production')
-  : path.resolve(process.cwd(), '.env');
+// Load environment variables
+const prodEnvPath = path.resolve(process.cwd(), '.env.production');
+const defaultEnvPath = path.resolve(process.cwd(), '.env');
 
-dotenv.config({ path: envPath });
+// 1. Always load .env as the base
+if (fs.existsSync(defaultEnvPath)) {
+  dotenv.config({ path: defaultEnvPath });
+  console.log(`[CONFIG] Base environment loaded from: ${defaultEnvPath}`);
+}
 
-console.log(`[CONFIG] Loading environment from: ${envPath}`);
+// 2. If in production, override with .env.production if it exists
+if (process.env.NODE_ENV === 'production' && fs.existsSync(prodEnvPath)) {
+  dotenv.config({ path: prodEnvPath, override: true });
+  console.log(`[CONFIG] Production overrides loaded from: ${prodEnvPath}`);
+}
 
 // ===========================================
 // Environment Variable Validation
