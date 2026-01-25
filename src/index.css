@@ -1,0 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme CSS Variables */
+:root {
+  /* Light Theme */
+  --color-background: #f5f5f5;
+  --color-foreground: #1a1a1a;
+  --color-card: #ffffff;
+  --color-border: #e0e0e0;
+  --color-primary: #0000db;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f0f0f0;
+  --color-muted: #6b6b6b;
+  
+  /* Poker-specific colors */
+  --color-table: #1a5f2a;
+  --color-table-border: #0d3d18;
+  --color-chip-gold: #ffd700;
+  --color-chip-red: #dc2626;
+  --color-chip-blue: #2563eb;
+  --color-chip-green: #16a34a;
+  --color-chip-black: #1a1a1a;
+}
+
+.dark {
+  /* Dark Theme */
+  --color-background: #1a1a1a;
+  --color-foreground: #e5e5e5;
+  --color-card: #1f1f1f;
+  --color-border: #383838;
+  --color-primary: #0000db;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #2a2a2a;
+  --color-muted: #6b6b6b;
+  
+  /* Poker-specific colors (same in dark mode) */
+  --color-table: #1a5f2a;
+  --color-table-border: #0d3d18;
+}
+
+* {
+  border-radius: 0 !important;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Fira Code', monospace;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+input, select, textarea {
+  background-color: var(--color-background) !important;
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  font-family: 'Fira Code', monospace;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+}
+
+::selection {
+  background-color: rgba(0, 0, 219, 0.3);
+}
+
+/* Card suit colors */
+.suit-hearts, .suit-diamonds {
+  color: #dc2626;
+}
+
+.suit-clubs, .suit-spades {
+  color: #1a1a1a;
+}
+
+.dark .suit-clubs, .dark .suit-spades {
+  color: #e5e5e5;
+}

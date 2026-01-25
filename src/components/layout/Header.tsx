@@ -1,0 +1,52 @@
+import { Link, useLocation } from 'react-router-dom';
+import { Spade, User } from 'lucide-react';
+import { ConnectButton } from '@/components/wallet/ConnectButton';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { useStore } from '@/store';
+
+export function Header() {
+  const location = useLocation();
+  const { connected, username } = useStore();
+  
+  return (
+    <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4">
+      <div className="flex items-center gap-6">
+        <Link to="/" className="flex items-center gap-2 text-foreground hover:text-primary transition-colors">
+          <Spade className="w-6 h-6" />
+          <span className="font-semibold text-lg">OCT Poker</span>
+        </Link>
+        
+        <nav className="flex items-center gap-4">
+          <Link 
+            to="/lobby" 
+            className={`text-sm transition-colors ${
+              location.pathname === '/lobby' 
+                ? 'text-primary' 
+                : 'text-muted hover:text-foreground'
+            }`}
+          >
+            Lobby
+          </Link>
+          {connected && (
+            <Link 
+              to="/dashboard" 
+              className={`text-sm transition-colors flex items-center gap-1 ${
+                location.pathname === '/dashboard' 
+                  ? 'text-primary' 
+                  : 'text-muted hover:text-foreground'
+              }`}
+            >
+              <User className="w-4 h-4" />
+              {username || 'Dashboard'}
+            </Link>
+          )}
+        </nav>
+      </div>
+      
+      <div className="flex items-center gap-3">
+        <ThemeToggle />
+        <ConnectButton />
+      </div>
+    </header>
+  );
+}
