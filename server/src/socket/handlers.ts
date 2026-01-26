@@ -126,6 +126,8 @@ async function saveHandHistory(
       // Get user from database by address
       const user = await UserRepository.findByAddress(player.address);
       if (user) {
+        const totalBet = startingStack - player.stack + winAmount;
+        
         await HandRepository.addPlayer({
           handId: hand.id,
           userId: user.id,
@@ -133,7 +135,7 @@ async function saveHandHistory(
           holeCards: showdownInfo?.holeCards?.map((c) => `${c.rank}${c.suit}`) || null,
           startingStack,
           endingStack: player.stack,
-          totalBet: startingStack - player.stack + winAmount,
+          totalBet,
           won: winAmount,
           finalHand: showdownInfo?.hand || null,
           result,
@@ -141,12 +143,11 @@ async function saveHandHistory(
 
         // Update user stats (incremental)
         const isWinner = winnerIds.has(player.id);
-        const lossAmount = Math.max(0, startingStack - player.stack);
         await UserRepository.updateStats(user.id, {
           handsPlayed: 1,
           handsWon: isWinner ? 1 : 0,
           totalWinnings: winAmount,
-          totalLosses: isWinner ? 0 : lossAmount,
+          totalLosses: totalBet,
         });
       }
     }

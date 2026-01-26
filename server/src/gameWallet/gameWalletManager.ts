@@ -266,16 +266,78 @@ export async function recordWinnings(
   loserAddress: string,
   amount: number
 ): Promise<void> {
-  await db.insert(claimableWinnings).values({
-    id: uuidv4(),
-    winnerSessionId,
-    loserSessionId,
-    loserAddress,
-    amount,
-    claimed: false,
-  });
+  // 1. Try to net against existing unclaimed winnings in the opposite direction
+  // (where current winner was loser and current loser was winner)
+  const oppositeWinnings = await db.select().from(claimableWinnings)
+    .where(and(
+      eq(claimableWinnings.winnerSessionId, loserSessionId),
+      eq(claimableWinnings.loserSessionId, winnerSessionId),
+      eq(claimableWinnings.claimed, false)
+    ));
 
-  console.log(`[GAME-WALLET] Recorded winnings: ${amount} OCT from ${loserSessionId} to ${winnerSessionId}`);
+  let remainingAmount = amount;
+
+  for (const opposite of oppositeWinnings) {
+    if (remainingAmount <= 0) break;
+
+    if (opposite.amount <= remainingAmount) {
+      // Current win covers previous loss entirely
+      remainingAmount -= opposite.amount;
+      
+      // Mark previous loss as "claimed" (cancelled out)
+      await db.update(claimableWinnings)
+        .set({ 
+          claimed: true, 
+          claimedAt: new Date(),
+          claimTxHash: 'CANCELLED_BY_NETTING' 
+        })
+        .where(eq(claimableWinnings.id, opposite.id));
+      
+      console.log(`[GAME-WALLET] Netted winnings: Cancelled ${opposite.amount} OCT previous loss to ${loserSessionId}`);
+    } else {
+      // Current win only partially covers previous loss
+      const newOppositeAmount = opposite.amount - remainingAmount;
+      remainingAmount = 0;
+      
+      await db.update(claimableWinnings)
+        .set({ amount: newOppositeAmount })
+        .where(eq(claimableWinnings.id, opposite.id));
+      
+      console.log(`[GAME-WALLET] Netted winnings: Reduced previous loss to ${loserSessionId} by ${amount} OCT`);
+    }
+  }
+
+  if (remainingAmount <= 0) return;
+
+  // 2. Add to existing unclaimed winnings in the same direction if any
+  const sameWinnings = await db.select().from(claimableWinnings)
+    .where(and(
+      eq(claimableWinnings.winnerSessionId, winnerSessionId),
+      eq(claimableWinnings.loserSessionId, loserSessionId),
+      eq(claimableWinnings.claimed, false)
+    ))
+    .limit(1);
+
+  if (sameWinnings.length > 0) {
+    const existing = sameWinnings[0];
+    await db.update(claimableWinnings)
+      .set({ amount: existing.amount + remainingAmount })
+      .where(eq(claimableWinnings.id, existing.id));
+    
+    console.log(`[GAME-WALLET] Updated existing winnings: Added ${remainingAmount} OCT (Total: ${existing.amount + remainingAmount}) from ${loserSessionId} to ${winnerSessionId}`);
+  } else {
+    // 3. Create new record
+    await db.insert(claimableWinnings).values({
+      id: uuidv4(),
+      winnerSessionId,
+      loserSessionId,
+      loserAddress,
+      amount: remainingAmount,
+      claimed: false,
+    });
+
+    console.log(`[GAME-WALLET] Recorded new winnings: ${remainingAmount} OCT from ${loserSessionId} to ${winnerSessionId}`);
+  }
 }
 
 /**
