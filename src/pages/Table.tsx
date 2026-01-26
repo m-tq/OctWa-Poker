@@ -323,18 +323,6 @@ export function Table() {
             ) : (
               <WifiOff className="w-3 h-3 text-red-500" />
             )}
-            {canStartGame && (
-              <Button 
-                variant="primary" 
-                size="sm" 
-                onClick={handleStartGame} 
-                disabled={isStarting}
-                className="h-7 px-3 text-xs bg-green-600 hover:bg-green-700 ml-2"
-              >
-                {isStarting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                Start Game
-              </Button>
-            )}
           </div>
         </div>
         
@@ -364,6 +352,18 @@ export function Table() {
           myPlayerId={myPlayer?.id}
           myHoleCards={myHoleCards}
           timeRemaining={isMyTurn ? timeRemaining : undefined}
+          startGameButton={canStartGame ? (
+            <Button 
+              variant="primary" 
+              size="sm" 
+              onClick={handleStartGame} 
+              disabled={isStarting}
+              className="h-7 px-3 text-xs bg-green-600 hover:bg-green-700 shadow-lg border border-green-500/50"
+            >
+              {isStarting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+              Start Game
+            </Button>
+          ) : undefined}
         />
       </div>
 

@@ -8,6 +8,7 @@ interface PokerTableProps {
   myPlayerId?: string;
   myHoleCards?: Card[] | null;
   timeRemaining?: number;
+  startGameButton?: React.ReactNode;
 }
 
 type SeatPosition = { top: string; left: string; transform: string };
@@ -95,7 +96,7 @@ function getSeatPositions(maxPlayers: number): SeatPosition[] {
   return positions;
 }
 
-export function PokerTable({ table, myPlayerId, myHoleCards, timeRemaining }: PokerTableProps) {
+export function PokerTable({ table, myPlayerId, myHoleCards, timeRemaining, startGameButton }: PokerTableProps) {
   const hand = table.currentHand;
   const dealerIndex = hand?.dealerIndex ?? -1;
   const activePlayerIndex = hand?.activePlayerIndex ?? -1;
@@ -165,7 +166,11 @@ export function PokerTable({ table, myPlayerId, myHoleCards, timeRemaining }: Po
         const isMe = player?.id === myPlayerId;
         const isCurrentTurn = index === activePlayerIndex;
         const isDealer = index === dealerIndex;
-        
+        const isOwner = player?.address === table.creatorAddress;
+        const isRightSide = parseInt(position.left) > 70;
+        const isLeftSide = parseInt(position.left) < 30;
+        const isBottomSide = parseInt(position.top) > 70;
+
         // Show hole cards for current player
         const holeCards = isMe ? myHoleCards : player?.holeCards;
         const showCards = isMe || hand?.stage === 'showdown';
@@ -186,6 +191,19 @@ export function PokerTable({ table, myPlayerId, myHoleCards, timeRemaining }: Po
               showCards={showCards}
               timeRemaining={isCurrentTurn ? timeRemaining : undefined}
             />
+            {/* Start Game Button for Owner */}
+            {isOwner && startGameButton && (
+              <div 
+                className={`
+                  absolute whitespace-nowrap z-30
+                  ${isRightSide ? 'right-full mr-4' : isLeftSide ? 'left-full ml-4' : 'top-full mt-4 left-1/2 -translate-x-1/2'}
+                  ${isBottomSide && !isLeftSide && !isRightSide ? 'bottom-full mb-20 top-auto mt-0' : ''}
+                `}
+                style={{ top: isLeftSide || isRightSide ? '50%' : undefined, transform: isLeftSide || isRightSide ? 'translateY(-50%)' : undefined }}
+              >
+                {startGameButton}
+              </div>
+            )}
           </div>
         );
       })}
