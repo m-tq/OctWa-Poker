@@ -479,9 +479,13 @@ async function start() {
     await tableManager.initialize();
     
     httpServer.listen(PORT, () => {
-      console.log(`🎰 OCT Poker Server running on port ${PORT}`);
-      console.log(`📊 Database: SQLite (data/poker.db)`);
-      console.log(`💰 Game Wallet: ${GAME_WALLET_MASTER_PASSWORD ? 'Enabled' : 'Disabled'}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`🎰 OCT Poker Server running on port ${PORT}`);
+        console.log(`📊 Database: SQLite (data/poker.db)`);
+        console.log(`💰 Game Wallet: ${GAME_WALLET_MASTER_PASSWORD ? 'Enabled' : 'Disabled'}`);
+      } else {
+        console.log(`🎰 OCT Poker Server running on port ${PORT} (Production)`);
+      }
     });
   } catch (error) {
     console.error('Failed to start server:', error);

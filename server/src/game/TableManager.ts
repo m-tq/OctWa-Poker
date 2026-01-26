@@ -58,7 +58,9 @@ export class TableManager {
       
       this.tables.set(table.id, table);
     }
-    console.log(`[TableManager] Loaded ${this.tables.size} tables from database`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[TableManager] Loaded ${this.tables.size} tables from database`);
+    }
   }
 
   async createTable(data: CreateTableData, creatorAddress?: string): Promise<Table> {

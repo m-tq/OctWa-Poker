@@ -44,12 +44,14 @@ class SecurityLogger {
     }
 
     // Log to console in development
-    console.log(`[Security] ${type}`, {
-      socketId: event.socketId,
-      address: event.address,
-      details,
-      time: event.timestamp.toISOString(),
-    });
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Security] ${type}`, {
+        socketId: event.socketId,
+        address: event.address,
+        details,
+        time: event.timestamp.toISOString(),
+      });
+    }
   }
 
   /**

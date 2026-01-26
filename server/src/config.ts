@@ -2,6 +2,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 
+// If in production, silence dotenv logging
+if (process.env.NODE_ENV === 'production') {
+  process.env.DOTENV_CONFIG_SILENT = 'true';
+}
+
 // Load environment variables
 const prodEnvPath = path.resolve(process.cwd(), '.env.production');
 const defaultEnvPath = path.resolve(process.cwd(), '.env');
@@ -9,13 +14,15 @@ const defaultEnvPath = path.resolve(process.cwd(), '.env');
 // 1. Always load .env as the base
 if (fs.existsSync(defaultEnvPath)) {
   dotenv.config({ path: defaultEnvPath });
-  console.log(`[CONFIG] Base environment loaded from: ${defaultEnvPath}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[CONFIG] Base environment loaded from: ${defaultEnvPath}`);
+  }
 }
 
 // 2. If in production, override with .env.production if it exists
 if (process.env.NODE_ENV === 'production' && fs.existsSync(prodEnvPath)) {
   dotenv.config({ path: prodEnvPath, override: true });
-  console.log(`[CONFIG] Production overrides loaded from: ${prodEnvPath}`);
+  console.log(`[CONFIG] Production environment loaded from: ${prodEnvPath}`);
 }
 
 // ===========================================
@@ -25,7 +32,9 @@ if (process.env.NODE_ENV === 'production' && fs.existsSync(prodEnvPath)) {
 function warnIfMissing(name: string, defaultValue?: string | number): void {
   if (!process.env[name]) {
     if (defaultValue !== undefined) {
-      console.warn(`[CONFIG] WARNING: ${name} not set, using default: ${defaultValue}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[CONFIG] WARNING: ${name} not set, using default: ${defaultValue}`);
+      }
     } else {
       console.error(`[CONFIG] ERROR: ${name} is required but not set!`);
     }
