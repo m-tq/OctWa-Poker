@@ -29,17 +29,23 @@ export function useSocket() {
     setLastTableSession,
     setGameWalletEnabled,
     lastTableSession,
+    currentTable,
     addError,
     connection,
   } = useStore();
 
   // Use refs for values needed in socket handlers to avoid re-creating socket
   const lastTableSessionRef = useRef(lastTableSession);
+  const currentTableRef = useRef(currentTable);
   const connectionRef = useRef(connection);
   
   useEffect(() => {
     lastTableSessionRef.current = lastTableSession;
   }, [lastTableSession]);
+
+  useEffect(() => {
+    currentTableRef.current = currentTable;
+  }, [currentTable]);
   
   useEffect(() => {
     connectionRef.current = connection;
@@ -244,6 +250,18 @@ export function useSocket() {
       console.log('[Socket] Stack updated:', playerId, stack);
     });
 
+    socket.on('table-deleted', ({ tableId }: { tableId: string }) => {
+      console.log('[Socket] Table deleted:', tableId);
+      removeTable(tableId);
+      if (currentTableRef.current?.id === tableId) {
+        setCurrentTable(null);
+        setCurrentHand(null);
+        setMyHoleCards(null);
+        setLastTableSession(null);
+        addError('TABLE_DELETED', 'This table has been deleted by the owner');
+      }
+    });
+
     socket.on('error', ({ code, message }: { code: string; message: string }) => {
       console.error('[Socket] Error:', code, message);
       addError(code, message);
@@ -269,8 +287,17 @@ export function useSocket() {
     minBuyIn: number;
     maxBuyIn: number;
     maxPlayers: number;
+    creatorAddress?: string;
   }) => {
     socketRef.current?.emit('create-table', data);
+  }, []);
+
+  const deleteTable = useCallback((tableId: string, address: string) => {
+    socketRef.current?.emit('delete-table', { tableId, address });
+  }, []);
+
+  const startGame = useCallback((tableId: string, address: string) => {
+    socketRef.current?.emit('start-game', { tableId, address });
   }, []);
 
   const joinTable = useCallback((data: {
@@ -345,6 +372,8 @@ export function useSocket() {
     isReconnecting,
     lastHandResult,
     createTable,
+    deleteTable,
+    startGame,
     joinTable,
     leaveTable,
     sendAction,

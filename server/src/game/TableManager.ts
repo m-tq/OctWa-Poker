@@ -24,7 +24,15 @@ export class TableManager {
         maxPlayers: dbTable.maxPlayers,
         players: new Array(dbTable.maxPlayers).fill(null),
         currentHand: null,
+        createdBy: dbTable.createdBy || undefined,
       };
+
+      if (dbTable.createdBy) {
+        const creator = await UserRepository.findById(dbTable.createdBy);
+        if (creator) {
+          table.creatorAddress = creator.address;
+        }
+      }
       
       // Load active sessions for this table
       const sessions = await TableRepository.getActiveSessions(dbTable.id);
@@ -82,6 +90,8 @@ export class TableManager {
       maxPlayers: data.maxPlayers,
       players: new Array(data.maxPlayers).fill(null),
       currentHand: null,
+      createdBy,
+      creatorAddress,
     };
 
     this.tables.set(table.id, table);

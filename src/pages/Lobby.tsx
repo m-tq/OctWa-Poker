@@ -11,7 +11,7 @@ import type { Table } from '@/types/game';
 export function Lobby() {
   const navigate = useNavigate();
   const { connected, connection, tables, tablesLoading, octBalance, username, gameWalletEnabled, addError } = useStore();
-  const { createTable, joinTable, refreshTables, isJoining } = useSocket();
+  const { createTable, deleteTable, joinTable, refreshTables, isJoining } = useSocket();
   
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showBuyInDialog, setShowBuyInDialog] = useState(false);
@@ -28,6 +28,14 @@ export function Lobby() {
       </div>
     );
   }
+
+  const handleCreateSubmit = (data: any) => {
+    createTable({
+      ...data,
+      creatorAddress: connection?.walletPubKey
+    });
+    setShowCreateDialog(false);
+  };
 
   const handleJoinClick = (tableId: string) => {
     const table = tables.find(t => t.id === tableId);
@@ -87,12 +95,14 @@ export function Lobby() {
         tables={tables} 
         loading={tablesLoading}
         onJoin={handleJoinClick}
+        onDelete={(id) => deleteTable(id, connection!.walletPubKey)}
+        currentAddress={connection?.walletPubKey}
       />
 
       <CreateTableDialog
         open={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
-        onCreate={createTable}
+        onCreate={handleCreateSubmit}
       />
 
       <BuyInDialog

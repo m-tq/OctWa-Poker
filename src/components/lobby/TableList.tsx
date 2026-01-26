@@ -7,9 +7,11 @@ interface TableListProps {
   tables: Table[];
   loading: boolean;
   onJoin: (tableId: string) => void;
+  onDelete?: (tableId: string) => void;
+  currentAddress?: string;
 }
 
-export function TableList({ tables, loading, onJoin }: TableListProps) {
+export function TableList({ tables, loading, onJoin, onDelete, currentAddress }: TableListProps) {
   if (loading) {
     return (
       <div className="grid gap-4">
@@ -37,6 +39,8 @@ export function TableList({ tables, loading, onJoin }: TableListProps) {
           key={table.id} 
           table={table} 
           onJoin={onJoin}
+          onDelete={onDelete}
+          currentAddress={currentAddress}
         />
       ))}
     </div>

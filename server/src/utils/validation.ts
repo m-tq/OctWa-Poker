@@ -83,7 +83,7 @@ export interface ValidationResult<T> {
   error?: string;
 }
 
-export function validateCreateTableData(data: unknown): ValidationResult<CreateTableData> {
+export function validateCreateTableData(data: unknown): ValidationResult<CreateTableData & { creatorAddress?: string }> {
   if (!data || typeof data !== 'object') {
     return { valid: false, error: 'Invalid data format' };
   }
@@ -123,6 +123,15 @@ export function validateCreateTableData(data: unknown): ValidationResult<CreateT
     return { valid: false, error: `Max players must be between ${MIN_PLAYERS} and ${MAX_PLAYERS}` };
   }
 
+  // Optional creator address
+  let creatorAddress: string | undefined;
+  if (d.creatorAddress !== undefined) {
+    if (!isValidAddress(d.creatorAddress)) {
+      return { valid: false, error: 'Invalid creator address' };
+    }
+    creatorAddress = d.creatorAddress as string;
+  }
+
   return {
     valid: true,
     data: {
@@ -132,6 +141,7 @@ export function validateCreateTableData(data: unknown): ValidationResult<CreateT
       minBuyIn: d.minBuyIn as number,
       maxBuyIn: d.maxBuyIn as number,
       maxPlayers: d.maxPlayers as number,
+      creatorAddress,
     },
   };
 }

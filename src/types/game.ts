@@ -33,6 +33,8 @@ export interface Table {
   maxPlayers: number;
   players: (Player | null)[];
   currentHand: Hand | null;
+  createdBy?: string;
+  creatorAddress?: string;
 }
 
 // Hand types

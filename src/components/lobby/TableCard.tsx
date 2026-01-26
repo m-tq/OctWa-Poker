@@ -1,4 +1,4 @@
-import { Users } from 'lucide-react';
+import { Users, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import type { Table } from '@/types/game';
@@ -6,12 +6,15 @@ import type { Table } from '@/types/game';
 interface TableCardProps {
   table: Table;
   onJoin: (tableId: string) => void;
+  onDelete?: (tableId: string) => void;
+  currentAddress?: string;
 }
 
-export function TableCard({ table, onJoin }: TableCardProps) {
+export function TableCard({ table, onJoin, onDelete, currentAddress }: TableCardProps) {
   const playerCount = table.players.filter(p => p !== null).length;
   const isFull = playerCount >= table.maxPlayers;
   const hasHand = table.currentHand !== null;
+  const isOwner = currentAddress && table.creatorAddress === currentAddress;
 
   return (
     <div className="bg-card border border-border p-4 flex items-center justify-between">
@@ -23,6 +26,9 @@ export function TableCard({ table, onJoin }: TableCardProps) {
           )}
           {isFull && (
             <Badge variant="warning" size="sm">Full</Badge>
+          )}
+          {isOwner && (
+            <Badge variant="primary" size="sm">Owner</Badge>
           )}
         </div>
         
@@ -36,13 +42,31 @@ export function TableCard({ table, onJoin }: TableCardProps) {
         </div>
       </div>
       
-      <Button 
-        onClick={() => onJoin(table.id)}
-        disabled={isFull}
-        variant={isFull ? 'secondary' : 'primary'}
-      >
-        {isFull ? 'Full' : 'Join'}
-      </Button>
+      <div className="flex items-center gap-2">
+        {isOwner && onDelete && (
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm('Are you sure you want to delete this table?')) {
+                onDelete(table.id);
+              }
+            }}
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
+        
+        <Button 
+          onClick={() => onJoin(table.id)}
+          disabled={isFull}
+          variant={isFull ? 'secondary' : 'primary'}
+        >
+          {isFull ? 'Full' : 'Join'}
+        </Button>
+      </div>
     </div>
   );
 }

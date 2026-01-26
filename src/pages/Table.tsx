@@ -19,17 +19,31 @@ export function Table() {
   const { tableId } = useParams<{ tableId: string }>();
   const navigate = useNavigate();
   const { currentTable, currentHand, myHoleCards, connection, socketConnected, errors, clearError } = useStore();
-  const { leaveTable, sendAction, isReconnecting, rejoinTable, lastHandResult, clearLastHandResult } = useSocket();
+  const { leaveTable, sendAction, isReconnecting, rejoinTable, lastHandResult, clearLastHandResult, startGame } = useSocket();
   const [timeRemaining, setTimeRemaining] = useState(30);
   const [isLoading, setIsLoading] = useState(true);
   const [handResult, setHandResult] = useState<HandResultNotification | null>(null);
   const [bustedMessage, setBustedMessage] = useState<string | null>(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   // Find my player
   const myPlayer = currentTable?.players.find(p => 
     p?.address === connection?.walletPubKey
   );
+
+  const isOwner = connection?.walletPubKey && currentTable?.creatorAddress === connection.walletPubKey;
+  const canStartGame = isOwner && !currentHand && currentTable?.players.filter(p => p !== null && p.isConnected).length >= 2;
+
+  const handleStartGame = async () => {
+    if (!tableId || !connection?.walletPubKey) return;
+    setIsStarting(true);
+    try {
+      startGame(tableId, connection.walletPubKey);
+    } finally {
+      setIsStarting(false);
+    }
+  };
 
   // Handle player busted error
   useEffect(() => {
@@ -308,6 +322,18 @@ export function Table() {
               <Wifi className="w-3 h-3 text-green-500" />
             ) : (
               <WifiOff className="w-3 h-3 text-red-500" />
+            )}
+            {canStartGame && (
+              <Button 
+                variant="primary" 
+                size="sm" 
+                onClick={handleStartGame} 
+                disabled={isStarting}
+                className="h-7 px-3 text-xs bg-green-600 hover:bg-green-700 ml-2"
+              >
+                {isStarting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                Start Game
+              </Button>
             )}
           </div>
         </div>

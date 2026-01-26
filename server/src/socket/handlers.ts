@@ -333,9 +333,81 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
         return;
       }
 
-      const table = await tableManager.createTable(validation.data!);
+      const table = await tableManager.createTable(validation.data!, validation.data!.creatorAddress);
       io.emit('table-created', sanitizeTableForPlayer(table));
       io.emit('tables-list', tableManager.getAllTables());
+    });
+
+    // Delete table
+    socket.on('delete-table', async (data: { tableId: string; address: string }) => {
+      if (!rateLimiter.isGeneralAllowed(socket.id, clientIP)) {
+        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        return;
+      }
+
+      try {
+        const table = tableManager.getTable(data.tableId);
+        if (!table) {
+          socket.emit('error', { code: 'NOT_FOUND', message: 'Table not found' });
+          return;
+        }
+
+        // Check if user is the creator
+        const user = await UserRepository.findByAddress(data.address);
+        if (!user || table.createdBy !== user.id) {
+          socket.emit('error', { code: 'UNAUTHORIZED', message: 'Only the creator can delete this table' });
+          return;
+        }
+
+        // Check if game is in progress
+        if (table.currentHand) {
+          socket.emit('error', { code: 'GAME_IN_PROGRESS', message: 'Cannot delete table while a game is in progress' });
+          return;
+        }
+
+        // Remove the table
+        await tableManager.removeTable(data.tableId);
+        
+        // Notify all clients
+        io.emit('table-deleted', { tableId: data.tableId });
+        io.emit('tables-list', tableManager.getAllTables());
+      } catch (error) {
+        console.error('Error deleting table:', error);
+        socket.emit('error', { code: 'SERVER_ERROR', message: 'Failed to delete table' });
+      }
+    });
+
+    // Start game manually
+    socket.on('start-game', async (data: { tableId: string; address: string }) => {
+      if (!rateLimiter.isActionAllowed(socket.id, clientIP)) {
+        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        return;
+      }
+
+      try {
+        const table = tableManager.getTable(data.tableId);
+        if (!table) return;
+
+        // Check if user is the creator
+        const user = await UserRepository.findByAddress(data.address);
+        if (!user || table.createdBy !== user.id) {
+          socket.emit('error', { code: 'UNAUTHORIZED', message: 'Only the creator can start the game' });
+          return;
+        }
+
+        if (table.currentHand) return;
+
+        // Check if enough players
+        const playersWithChips = table.players.filter((p) => p !== null && p.stack > 0 && p.isConnected);
+        if (playersWithChips.length < 2) {
+          socket.emit('error', { code: 'NOT_ENOUGH_PLAYERS', message: 'Need at least 2 players to start' });
+          return;
+        }
+
+        startNewHand(io, tableManager, data.tableId);
+      } catch (error) {
+        console.error('Error starting game:', error);
+      }
     });
 
     // Join table
@@ -444,7 +516,13 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       // Check if we can start a hand (with lock to prevent race)
       const activePlayers = tableManager.getActivePlayers(joinData.tableId);
       if (activePlayers.length >= 2 && !table.currentHand) {
-        startNewHand(io, tableManager, joinData.tableId);
+        // Auto-start ONLY if no creator is assigned to the table
+        // If there is a creator, they must start manually
+        if (!table.createdBy) {
+          startNewHand(io, tableManager, joinData.tableId);
+        } else {
+          console.log(`[Game] Table ${joinData.tableId} has creator ${table.createdBy}, waiting for manual start.`);
+        }
       }
     });
 
