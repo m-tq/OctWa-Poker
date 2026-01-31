@@ -13,7 +13,7 @@ export function Header() {
       <div className="flex items-center gap-6">
         <Link to="/" className="flex items-center gap-2 text-foreground hover:text-primary transition-colors">
           <Spade className="w-6 h-6" />
-          <span className="font-semibold text-lg">OCT Poker</span>
+          <span className="font-semibold text-lg">OctWa Poker</span>
         </Link>
         
         <nav className="flex items-center gap-4">
