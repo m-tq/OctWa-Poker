@@ -1,103 +1,696 @@
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Fira+Code:wght@400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Theme CSS Variables */
+/* ============================================================
+   Theme CSS Variables
+   ============================================================ */
+
 :root {
-  /* Light Theme */
-  --color-background: #f5f5f5;
-  --color-foreground: #1a1a1a;
-  --color-card: #ffffff;
-  --color-border: #e0e0e0;
-  --color-primary: #0000db;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #f0f0f0;
-  --color-muted: #6b6b6b;
-  
-  /* Poker-specific colors */
-  --color-table: #1a5f2a;
-  --color-table-border: #0d3d18;
-  --color-chip-gold: #ffd700;
-  --color-chip-red: #dc2626;
-  --color-chip-blue: #2563eb;
-  --color-chip-green: #16a34a;
-  --color-chip-black: #1a1a1a;
+    /* Light Theme */
+    --color-background: #f5f5f5;
+    --color-foreground: #1a1a1a;
+    --color-card: #ffffff;
+    --color-border: #e0e0e0;
+    --color-primary: #0000db;
+    --color-primary-foreground: #ffffff;
+    --color-secondary: #f0f0f0;
+    --color-muted: #6b6b6b;
+
+    /* Poker-specific colors */
+    --color-table: #1b6b3a;
+    --color-table-border: #6b3a1b;
+    --color-table-felt: #1f7a44;
+    --color-chip-gold: #ffd700;
+    --color-chip-red: #dc2626;
+    --color-chip-blue: #2563eb;
+    --color-chip-green: #16a34a;
+    --color-chip-black: #1a1a1a;
 }
 
 .dark {
-  /* Dark Theme */
-  --color-background: #1a1a1a;
-  --color-foreground: #e5e5e5;
-  --color-card: #1f1f1f;
-  --color-border: #383838;
-  --color-primary: #0000db;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #2a2a2a;
-  --color-muted: #6b6b6b;
-  
-  /* Poker-specific colors (same in dark mode) */
-  --color-table: #1a5f2a;
-  --color-table-border: #0d3d18;
+    /* Dark Theme — PokerNow-inspired */
+    --color-background: #0f0f0f;
+    --color-foreground: #e5e5e5;
+    --color-card: #1a1a1a;
+    --color-border: #2a2a2a;
+    --color-primary: #3b82f6;
+    --color-primary-foreground: #ffffff;
+    --color-secondary: #1f1f1f;
+    --color-muted: #6b6b6b;
+
+    /* Poker-specific colors (same in dark mode) */
+    --color-table: #1b6b3a;
+    --color-table-border: #6b3a1b;
+    --color-table-felt: #1f7a44;
 }
+
+/* ============================================================
+   Base Styles
+   ============================================================ */
 
 * {
-  border-radius: 0 !important;
+    border-radius: 0 !important;
 }
 
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  padding: 0;
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
 }
 
 body {
-  font-family: 'Fira Code', monospace;
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  transition: background-color 0.2s ease, color 0.2s ease;
+    font-family:
+        "Inter",
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        sans-serif;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-input, select, textarea {
-  background-color: var(--color-background) !important;
-  border: 1px solid var(--color-border);
-  color: var(--color-foreground);
-  font-family: 'Fira Code', monospace;
+/* Monospace for numbers / code contexts */
+.font-mono,
+code,
+pre,
+.tabular-nums {
+    font-family: "Fira Code", "Cascadia Code", "JetBrains Mono", monospace;
 }
 
-input:focus, select:focus, textarea:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+input,
+select,
+textarea {
+    background-color: var(--color-background) !important;
+    border: 1px solid var(--color-border);
+    color: var(--color-foreground);
+    font-family: inherit;
 }
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+    width: 6px;
+    height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-background);
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 ::selection {
-  background-color: rgba(0, 0, 219, 0.3);
+    background-color: rgba(59, 130, 246, 0.3);
 }
 
-/* Card suit colors */
-.suit-hearts, .suit-diamonds {
-  color: #dc2626;
+/* ============================================================
+   Card Suit Colors
+   ============================================================ */
+
+.suit-hearts,
+.suit-diamonds {
+    color: #dc2626;
 }
 
-.suit-clubs, .suit-spades {
-  color: #1a1a1a;
+.suit-clubs,
+.suit-spades {
+    color: #1a1a1a;
 }
 
-.dark .suit-clubs, .dark .suit-spades {
-  color: #e5e5e5;
+.dark .suit-clubs,
+.dark .suit-spades {
+    color: #e5e5e5;
+}
+
+/* ============================================================
+   Poker Table Felt Texture
+   ============================================================ */
+
+.table-felt {
+    background: radial-gradient(
+        ellipse at 50% 45%,
+        #1f7a44 0%,
+        #1b6b3a 40%,
+        #166030 80%,
+        #125228 100%
+    );
+}
+
+.table-felt::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: repeating-conic-gradient(
+        rgba(255, 255, 255, 0.003) 0%,
+        rgba(0, 0, 0, 0.003) 0.5%,
+        rgba(255, 255, 255, 0.003) 1%
+    );
+    pointer-events: none;
+}
+
+/* ============================================================
+   Animations — Card Deal
+   ============================================================ */
+
+@keyframes cardDeal {
+    0% {
+        transform: translateY(-60px) scale(0.85) rotate(-5deg);
+        opacity: 0;
+    }
+    50% {
+        opacity: 0.7;
+    }
+    100% {
+        transform: translateY(0) scale(1) rotate(0deg);
+        opacity: 1;
+    }
+}
+
+@keyframes cardFlip {
+    0% {
+        transform: perspective(400px) rotateY(90deg) scale(0.9);
+        opacity: 0.3;
+    }
+    50% {
+        transform: perspective(400px) rotateY(45deg) scale(0.95);
+        opacity: 0.6;
+    }
+    100% {
+        transform: perspective(400px) rotateY(0deg) scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes cardReveal {
+    0% {
+        transform: scale(0.9);
+        opacity: 0;
+        filter: blur(4px);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+        filter: blur(0);
+    }
+}
+
+/* ============================================================
+   Animations — Chips
+   ============================================================ */
+
+@keyframes chipMove {
+    0% {
+        transform: scale(0.3) translateY(20px);
+        opacity: 0;
+    }
+    60% {
+        transform: scale(1.1) translateY(-4px);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes chipCollect {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(0.3) translateY(-40px);
+        opacity: 0;
+    }
+}
+
+@keyframes potGrow {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.08);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* ============================================================
+   Animations — Turn / Pulse / Glow
+   ============================================================ */
+
+@keyframes turnGlow {
+    0%,
+    100% {
+        box-shadow: 0 0 8px 2px rgba(250, 204, 21, 0.25);
+    }
+    50% {
+        box-shadow: 0 0 20px 6px rgba(250, 204, 21, 0.45);
+    }
+}
+
+@keyframes urgentGlow {
+    0%,
+    100% {
+        box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 24px 8px rgba(239, 68, 68, 0.6);
+    }
+}
+
+@keyframes subtlePulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+@keyframes winPulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.4);
+    }
+    50% {
+        transform: scale(1.02);
+        box-shadow: 0 0 20px 10px rgba(250, 204, 21, 0.15);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(250, 204, 21, 0);
+    }
+}
+
+/* ============================================================
+   Animations — Slide / Fade
+   ============================================================ */
+
+@keyframes slideInFromBottom {
+    0% {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideInFromLeft {
+    0% {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+    100% {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+@keyframes fadeInUp {
+    0% {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInScale {
+    0% {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes zoomIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* ============================================================
+   Animations — Dealer Button
+   ============================================================ */
+
+@keyframes dealerBounce {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-3px);
+    }
+}
+
+/* ============================================================
+   Animations — Chat / Notification
+   ============================================================ */
+
+@keyframes newMessage {
+    0% {
+        background-color: rgba(59, 130, 246, 0.15);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+@keyframes notificationBadge {
+    0% {
+        transform: scale(0);
+    }
+    50% {
+        transform: scale(1.2);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* ============================================================
+   Animation Utility Classes
+   ============================================================ */
+
+.animate-card-deal {
+    animation: cardDeal 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-card-flip {
+    animation: cardFlip 0.4s ease-out both;
+}
+
+.animate-card-reveal {
+    animation: cardReveal 0.3s ease-out both;
+}
+
+.animate-chip-move {
+    animation: chipMove 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-chip-collect {
+    animation: chipCollect 0.5s ease-in both;
+}
+
+.animate-pot-grow {
+    animation: potGrow 0.3s ease-out;
+}
+
+.animate-turn-glow {
+    animation: turnGlow 1.5s ease-in-out infinite;
+}
+
+.animate-urgent-glow {
+    animation: urgentGlow 0.8s ease-in-out infinite;
+}
+
+.animate-subtle-pulse {
+    animation: subtlePulse 2s ease-in-out infinite;
+}
+
+.animate-win-pulse {
+    animation: winPulse 1.5s ease-in-out infinite;
+}
+
+.animate-slide-in-bottom {
+    animation: slideInFromBottom 0.3s ease-out both;
+}
+
+.animate-slide-in-left {
+    animation: slideInFromLeft 0.25s ease-out both;
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out both;
+}
+
+.animate-fade-in-up {
+    animation: fadeInUp 0.35s ease-out both;
+}
+
+.animate-fade-in-scale {
+    animation: fadeInScale 0.25s ease-out both;
+}
+
+.animate-zoom-in {
+    animation: zoomIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-dealer-bounce {
+    animation: dealerBounce 2s ease-in-out infinite;
+}
+
+.animate-new-message {
+    animation: newMessage 1s ease-out both;
+}
+
+.animate-notification-badge {
+    animation: notificationBadge 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Staggered animation delays for community cards */
+.animate-delay-100 {
+    animation-delay: 100ms;
+}
+.animate-delay-200 {
+    animation-delay: 200ms;
+}
+.animate-delay-300 {
+    animation-delay: 300ms;
+}
+.animate-delay-400 {
+    animation-delay: 400ms;
+}
+
+/* ============================================================
+   Utility: animate-in (used by components)
+   ============================================================ */
+
+.animate-in {
+    animation-duration: 0.3s;
+    animation-fill-mode: both;
+}
+
+.animate-in.fade-in {
+    animation-name: fadeIn;
+}
+
+.animate-in.zoom-in {
+    animation-name: zoomIn;
+}
+
+.animate-in.slide-in-from-left {
+    animation-name: slideInFromLeft;
+}
+
+/* Duration modifiers */
+.duration-200 {
+    animation-duration: 200ms;
+}
+.duration-300 {
+    animation-duration: 300ms;
+}
+.duration-500 {
+    animation-duration: 500ms;
+}
+
+/* ============================================================
+   Poker Table Specific Overrides
+   ============================================================ */
+
+/* Allow rounded corners inside the poker table area */
+.poker-table-area *,
+.poker-table-area *::before,
+.poker-table-area *::after {
+    border-radius: revert !important;
+}
+
+/* Card elements get rounded corners */
+[class*="PlayingCard"],
+[class*="rounded-lg"],
+[class*="rounded-xl"],
+[class*="rounded-2xl"],
+[class*="rounded-full"],
+[aria-label*="card"],
+[aria-label*="Card"] {
+    border-radius: revert !important;
+}
+
+/* Force rounded on specific UI elements that need it */
+.force-rounded {
+    border-radius: revert !important;
+}
+
+/* ============================================================
+   Selection / Focus Styles
+   ============================================================ */
+
+button:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* ============================================================
+   Transition utilities
+   ============================================================ */
+
+.transition-gpu {
+    will-change: transform, opacity;
+    transform: translateZ(0);
+}
+
+/* ============================================================
+   Number formatting
+   ============================================================ */
+
+.tabular-nums {
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Responsive: Hide on smaller screens
+   ============================================================ */
+
+@media (max-width: 640px) {
+    .hide-mobile {
+        display: none !important;
+    }
+}
+
+/* ============================================================
+   Poker card hover lift effect
+   ============================================================ */
+
+.card-hover-lift {
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.card-hover-lift:hover {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================================
+   Disable text selection on game elements
+   ============================================================ */
+
+.no-select {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Global: disable selection on table area */
+.poker-table-area {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* ============================================================
+   Chat / Log panel scroll fade
+   ============================================================ */
+
+.scroll-fade-top {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 24px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 24px);
+}
+
+.scroll-fade-bottom {
+    mask-image: linear-gradient(to top, transparent 0%, black 24px);
+    -webkit-mask-image: linear-gradient(to top, transparent 0%, black 24px);
+}
+
+/* ============================================================
+   Glass morphism utility
+   ============================================================ */
+
+.glass {
+    background: rgba(15, 15, 15, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-light {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================================
+   Timer bar smooth animation
+   ============================================================ */
+
+.timer-bar {
+    transition: width 1s linear;
+}
+
+.timer-bar-urgent {
+    transition: width 1s linear;
+    animation: urgentGlow 0.8s ease-in-out infinite;
 }

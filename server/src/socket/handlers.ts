@@ -1,20 +1,29 @@
-import { Server, Socket } from 'socket.io';
-import { TableManager } from '../game/TableManager.js';
-import { GameManager } from '../game/GameManager.js';
+import { Server, Socket } from "socket.io";
+import { TableManager } from "../game/TableManager.js";
+import { GameManager } from "../game/GameManager.js";
 import {
   validateCreateTableData,
   validateJoinTableData,
   validatePlayerActionData,
   validateRejoinData,
   validateLeaveTableData,
-} from '../utils/validation.js';
-import { ActionRateLimiter } from '../utils/rateLimiter.js';
-import { ExponentialBackoffLimiter, ActionSequenceValidator } from '../utils/security.js';
-import { HandRepository } from '../db/repositories/HandRepository.js';
-import { UserRepository } from '../db/repositories/UserRepository.js';
-import { completeSession, getSession, startPlaying, updateStack, recordWinnings } from '../gameWallet/index.js';
-import { TURN_TIMEOUT_MS, DISCONNECT_GRACE_MS } from '../config.js';
-import type { Table, Player, HandResult } from '../types/index.js';
+} from "../utils/validation.js";
+import { ActionRateLimiter } from "../utils/rateLimiter.js";
+import {
+  ExponentialBackoffLimiter,
+  ActionSequenceValidator,
+} from "../utils/security.js";
+import { HandRepository } from "../db/repositories/HandRepository.js";
+import { UserRepository } from "../db/repositories/UserRepository.js";
+import {
+  completeSession,
+  getSession,
+  startPlaying,
+  updateStack,
+  recordWinnings,
+} from "../gameWallet/index.js";
+import { TURN_TIMEOUT_MS, DISCONNECT_GRACE_MS } from "../config.js";
+import type { Table, Player, HandResult } from "../types/index.js";
 
 // Game managers per table
 const gameManagers: Map<string, GameManager> = new Map();
@@ -71,7 +80,10 @@ function sanitizeTableForPlayer(table: Table, playerId?: string): Table {
 function broadcastTableState(io: Server, table: Table): void {
   for (const player of table.players) {
     if (player && player.isConnected) {
-      io.to(player.socketId).emit('table-state', sanitizeTableForPlayer(table, player.id));
+      io.to(player.socketId).emit(
+        "table-state",
+        sanitizeTableForPlayer(table, player.id),
+      );
     }
   }
 }
@@ -89,7 +101,7 @@ async function saveHandHistory(
   dealerSeat: number,
   sbSeat: number,
   bbSeat: number,
-  playerStartingStacks: Map<string, number>
+  playerStartingStacks: Map<string, number>,
 ): Promise<void> {
   try {
     // Get or increment hand number for this table
@@ -113,26 +125,30 @@ async function saveHandHistory(
       if (!player) continue;
 
       const startingStack = playerStartingStacks.get(player.id) || player.stack;
-      const winAmount = handResult.winners.find((w) => w.playerId === player.id)?.amount || 0;
-      const showdownInfo = handResult.showdown?.find((s) => s.playerId === player.id);
+      const winAmount =
+        handResult.winners.find((w) => w.playerId === player.id)?.amount || 0;
+      const showdownInfo = handResult.showdown?.find(
+        (s) => s.playerId === player.id,
+      );
 
-      let result: 'won' | 'lost' | 'folded' | 'split' = 'lost';
+      let result: "won" | "lost" | "folded" | "split" = "lost";
       if (winnerIds.has(player.id)) {
-        result = handResult.winners.length > 1 ? 'split' : 'won';
-      } else if (player.status === 'folded') {
-        result = 'folded';
+        result = handResult.winners.length > 1 ? "split" : "won";
+      } else if (player.status === "folded") {
+        result = "folded";
       }
 
       // Get user from database by address
       const user = await UserRepository.findByAddress(player.address);
       if (user) {
         const totalBet = startingStack - player.stack + winAmount;
-        
+
         await HandRepository.addPlayer({
           handId: hand.id,
           userId: user.id,
           seatIndex: player.seatIndex,
-          holeCards: showdownInfo?.holeCards?.map((c) => `${c.rank}${c.suit}`) || null,
+          holeCards:
+            showdownInfo?.holeCards?.map((c) => `${c.rank}${c.suit}`) || null,
           startingStack,
           endingStack: player.stack,
           totalBet,
@@ -153,8 +169,8 @@ async function saveHandHistory(
     }
 
     // Complete hand record - store address in winnersJson for frontend matching
-    const winnersWithAddress = handResult.winners.map(w => {
-      const player = table.players.find(p => p?.id === w.playerId);
+    const winnersWithAddress = handResult.winners.map((w) => {
+      const player = table.players.find((p) => p?.id === w.playerId);
       return {
         ...w,
         address: player?.address || null,
@@ -169,7 +185,7 @@ async function saveHandHistory(
 
     console.log(`[DB] Hand ${handNumber} saved for table ${tableId}`);
   } catch (error) {
-    console.error('[DB] Failed to save hand history:', error);
+    console.error("[DB] Failed to save hand history:", error);
   }
 }
 
@@ -177,7 +193,7 @@ async function settleGameWallets(
   tableManager: TableManager,
   table: Table,
   handResult: HandResult,
-  startingStacks: Map<string, number>
+  startingStacks: Map<string, number>,
 ): Promise<void> {
   const winners = handResult.winners;
   const totalWin = winners.reduce((sum, w) => sum + w.amount, 0);
@@ -191,7 +207,9 @@ async function settleGameWallets(
       const delta = player.stack - startingStack;
       return delta < 0 ? { player, loss: -delta } : null;
     })
-    .filter((entry): entry is { player: Player; loss: number } => entry !== null);
+    .filter(
+      (entry): entry is { player: Player; loss: number } => entry !== null,
+    );
 
   if (losses.length === 0) return;
 
@@ -204,7 +222,9 @@ async function settleGameWallets(
     let allocated = 0;
     for (let i = 0; i < winners.length; i++) {
       const winner = winners[i];
-      const winnerSessionId = tableManager.getGameWalletSessionId(winner.playerId);
+      const winnerSessionId = tableManager.getGameWalletSessionId(
+        winner.playerId,
+      );
       if (!winnerSessionId) continue;
 
       let amount = 0;
@@ -218,7 +238,12 @@ async function settleGameWallets(
       if (amount <= 0) continue;
 
       recordPromises.push(
-        recordWinnings(winnerSessionId, loserSessionId, loser.player.address, amount)
+        recordWinnings(
+          winnerSessionId,
+          loserSessionId,
+          loser.player.address,
+          amount,
+        ),
       );
     }
   }
@@ -237,7 +262,10 @@ async function settleGameWallets(
   await Promise.all(updatePromises);
 }
 
-export function setupSocketHandlers(io: Server, tableManager: TableManager): void {
+export function setupSocketHandlers(
+  io: Server,
+  tableManager: TableManager,
+): void {
   // Track socket ID to IP mapping for cleanup
   const socketIPMap: Map<string, string> = new Map();
 
@@ -246,22 +274,27 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
    */
   function getClientIP(socket: Socket): string {
     // Try x-forwarded-for header first (for proxies/load balancers)
-    const forwarded = socket.handshake.headers['x-forwarded-for'];
+    const forwarded = socket.handshake.headers["x-forwarded-for"];
     if (forwarded) {
-      const ips = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
+      const ips = Array.isArray(forwarded)
+        ? forwarded[0]
+        : forwarded.split(",")[0];
       return ips.trim();
     }
     // Fall back to direct connection IP
-    return socket.handshake.address || 'unknown';
+    return socket.handshake.address || "unknown";
   }
 
-  io.on('connection', (socket: Socket) => {
+  io.on("connection", (socket: Socket) => {
     const clientIP = getClientIP(socket);
 
     // Security: Check if IP is blocked
     if (rateLimiter.isIPBlocked(clientIP)) {
       console.log(`[Security] Blocked IP ${clientIP} attempted connection`);
-      socket.emit('error', { code: 'IP_BLOCKED', message: 'Too many connections. Please try again later.' });
+      socket.emit("error", {
+        code: "IP_BLOCKED",
+        message: "Too many connections. Please try again later.",
+      });
       socket.disconnect(true);
       return;
     }
@@ -269,7 +302,10 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
     // Security: Register connection and check limit
     if (!rateLimiter.registerConnection(clientIP, socket.id)) {
       console.log(`[Security] IP ${clientIP} exceeded connection limit`);
-      socket.emit('error', { code: 'CONNECTION_LIMIT', message: 'Too many connections from your IP.' });
+      socket.emit("error", {
+        code: "CONNECTION_LIMIT",
+        message: "Too many connections from your IP.",
+      });
       socket.disconnect(true);
       return;
     }
@@ -277,150 +313,208 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
     // Store IP mapping for cleanup on disconnect
     socketIPMap.set(socket.id, clientIP);
 
-    console.log(`Client connected: ${socket.id} from IP: ${clientIP.slice(0, 10)}***`);
+    console.log(
+      `Client connected: ${socket.id} from IP: ${clientIP.slice(0, 10)}***`,
+    );
 
     // Get tables list
-    socket.on('get-tables', () => {
+    socket.on("get-tables", () => {
       if (!rateLimiter.isGeneralAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        socket.emit("error", {
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+        });
         return;
       }
       const tables = tableManager.getAllTables();
-      socket.emit('tables-list', tables);
+      socket.emit("tables-list", tables);
     });
 
     // Get user stats and history
-    socket.on('get-user-stats', async (data: { address: string }) => {
+    socket.on("get-user-stats", async (data: { address: string }) => {
       if (!rateLimiter.isGeneralAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        socket.emit("error", {
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+        });
         return;
       }
 
       try {
         const user = await UserRepository.findByAddress(data.address);
         if (!user) {
-          socket.emit('user-stats', { error: 'User not found' });
+          socket.emit("user-stats", { error: "User not found" });
           return;
         }
 
         const history = await HandRepository.getHandHistory(user.id, 20);
-        socket.emit('user-stats', {
+        socket.emit("user-stats", {
           address: user.address,
           name: user.name,
           handsPlayed: user.handsPlayed,
           handsWon: user.handsWon,
-          winRate: user.handsPlayed > 0 ? (user.handsWon / user.handsPlayed * 100).toFixed(1) : '0',
+          winRate:
+            user.handsPlayed > 0
+              ? ((user.handsWon / user.handsPlayed) * 100).toFixed(1)
+              : "0",
           totalWinnings: user.totalWinnings,
           totalLosses: user.totalLosses,
           netProfit: user.totalWinnings - user.totalLosses,
           recentHands: history,
         });
       } catch (error) {
-        console.error('Error fetching user stats:', error);
-        socket.emit('user-stats', { error: 'Failed to fetch stats' });
+        console.error("Error fetching user stats:", error);
+        socket.emit("user-stats", { error: "Failed to fetch stats" });
       }
     });
 
     // Create table
-    socket.on('create-table', async (data: unknown) => {
+    socket.on("create-table", async (data: unknown) => {
       if (!rateLimiter.isGeneralAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        socket.emit("error", {
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+        });
         return;
       }
 
       const validation = validateCreateTableData(data);
       if (!validation.valid) {
-        socket.emit('error', { code: 'INVALID_DATA', message: validation.error });
+        socket.emit("error", {
+          code: "INVALID_DATA",
+          message: validation.error,
+        });
         return;
       }
 
-      const table = await tableManager.createTable(validation.data!, validation.data!.creatorAddress);
-      io.emit('table-created', sanitizeTableForPlayer(table));
-      io.emit('tables-list', tableManager.getAllTables());
+      const table = await tableManager.createTable(
+        validation.data!,
+        validation.data!.creatorAddress,
+      );
+      io.emit("table-created", sanitizeTableForPlayer(table));
+      io.emit("tables-list", tableManager.getAllTables());
     });
 
     // Delete table
-    socket.on('delete-table', async (data: { tableId: string; address: string }) => {
-      if (!rateLimiter.isGeneralAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
-        return;
-      }
-
-      try {
-        const table = tableManager.getTable(data.tableId);
-        if (!table) {
-          socket.emit('error', { code: 'NOT_FOUND', message: 'Table not found' });
+    socket.on(
+      "delete-table",
+      async (data: { tableId: string; address: string }) => {
+        if (!rateLimiter.isGeneralAllowed(socket.id, clientIP)) {
+          socket.emit("error", {
+            code: "RATE_LIMITED",
+            message: "Too many requests",
+          });
           return;
         }
 
-        // Check if user is the creator
-        const user = await UserRepository.findByAddress(data.address);
-        if (!user || table.createdBy !== user.id) {
-          socket.emit('error', { code: 'UNAUTHORIZED', message: 'Only the creator can delete this table' });
-          return;
-        }
+        try {
+          const table = tableManager.getTable(data.tableId);
+          if (!table) {
+            socket.emit("error", {
+              code: "NOT_FOUND",
+              message: "Table not found",
+            });
+            return;
+          }
 
-        // Check if game is in progress
-        if (table.currentHand) {
-          socket.emit('error', { code: 'GAME_IN_PROGRESS', message: 'Cannot delete table while a game is in progress' });
-          return;
-        }
+          // Check if user is the creator
+          const user = await UserRepository.findByAddress(data.address);
+          if (!user || table.createdBy !== user.id) {
+            socket.emit("error", {
+              code: "UNAUTHORIZED",
+              message: "Only the creator can delete this table",
+            });
+            return;
+          }
 
-        // Remove the table
-        await tableManager.removeTable(data.tableId);
-        
-        // Notify all clients
-        io.emit('table-deleted', { tableId: data.tableId });
-        io.emit('tables-list', tableManager.getAllTables());
-      } catch (error) {
-        console.error('Error deleting table:', error);
-        socket.emit('error', { code: 'SERVER_ERROR', message: 'Failed to delete table' });
-      }
-    });
+          // Check if game is in progress
+          if (table.currentHand) {
+            socket.emit("error", {
+              code: "GAME_IN_PROGRESS",
+              message: "Cannot delete table while a game is in progress",
+            });
+            return;
+          }
+
+          // Remove the table
+          await tableManager.removeTable(data.tableId);
+
+          // Notify all clients
+          io.emit("table-deleted", { tableId: data.tableId });
+          io.emit("tables-list", tableManager.getAllTables());
+        } catch (error) {
+          console.error("Error deleting table:", error);
+          socket.emit("error", {
+            code: "SERVER_ERROR",
+            message: "Failed to delete table",
+          });
+        }
+      },
+    );
 
     // Start game manually
-    socket.on('start-game', async (data: { tableId: string; address: string }) => {
-      if (!rateLimiter.isActionAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
-        return;
-      }
-
-      try {
-        const table = tableManager.getTable(data.tableId);
-        if (!table) return;
-
-        // Check if user is the creator
-        const user = await UserRepository.findByAddress(data.address);
-        if (!user || table.createdBy !== user.id) {
-          socket.emit('error', { code: 'UNAUTHORIZED', message: 'Only the creator can start the game' });
+    socket.on(
+      "start-game",
+      async (data: { tableId: string; address: string }) => {
+        if (!rateLimiter.isActionAllowed(socket.id, clientIP)) {
+          socket.emit("error", {
+            code: "RATE_LIMITED",
+            message: "Too many requests",
+          });
           return;
         }
 
-        if (table.currentHand) return;
+        try {
+          const table = tableManager.getTable(data.tableId);
+          if (!table) return;
 
-        // Check if enough players
-        const playersWithChips = table.players.filter((p) => p !== null && p.stack > 0 && p.isConnected);
-        if (playersWithChips.length < 2) {
-          socket.emit('error', { code: 'NOT_ENOUGH_PLAYERS', message: 'Need at least 2 players to start' });
-          return;
+          // Check if user is the creator
+          const user = await UserRepository.findByAddress(data.address);
+          if (!user || table.createdBy !== user.id) {
+            socket.emit("error", {
+              code: "UNAUTHORIZED",
+              message: "Only the creator can start the game",
+            });
+            return;
+          }
+
+          if (table.currentHand) return;
+
+          // Check if enough players
+          const playersWithChips = table.players.filter(
+            (p) => p !== null && p.stack > 0 && p.isConnected,
+          );
+          if (playersWithChips.length < 2) {
+            socket.emit("error", {
+              code: "NOT_ENOUGH_PLAYERS",
+              message: "Need at least 2 players to start",
+            });
+            return;
+          }
+
+          startNewHand(io, tableManager, data.tableId);
+        } catch (error) {
+          console.error("Error starting game:", error);
         }
-
-        startNewHand(io, tableManager, data.tableId);
-      } catch (error) {
-        console.error('Error starting game:', error);
-      }
-    });
+      },
+    );
 
     // Join table
-    socket.on('join-table', async (data: unknown) => {
+    socket.on("join-table", async (data: unknown) => {
       // Security: Check if client is blocked due to violations
       if (violationLimiter.isBlocked(socket.id)) {
-        socket.emit('error', { code: 'BLOCKED', message: 'Too many violations. Please wait.' });
+        socket.emit("error", {
+          code: "BLOCKED",
+          message: "Too many violations. Please wait.",
+        });
         return;
       }
 
       if (!rateLimiter.isActionAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        socket.emit("error", {
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+        });
         return;
       }
 
@@ -428,7 +522,10 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       if (!validation.valid) {
         // Record violation for invalid data
         violationLimiter.recordViolation(socket.id);
-        socket.emit('error', { code: 'INVALID_DATA', message: validation.error });
+        socket.emit("error", {
+          code: "INVALID_DATA",
+          message: validation.error,
+        });
         return;
       }
 
@@ -439,7 +536,10 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       if (existingTables && existingTables.size > 0) {
         // Allow same table rejoin, but not multiple tables
         if (!existingTables.has(joinData.tableId)) {
-          socket.emit('error', { code: 'MULTI_TABLE', message: 'Already playing at another table' });
+          socket.emit("error", {
+            code: "MULTI_TABLE",
+            message: "Already playing at another table",
+          });
           return;
         }
       }
@@ -447,46 +547,66 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       // Escrow verification (if escrow is enabled and session ID provided)
       if (joinData.escrowSessionId) {
         const escrowSession = await getSession(joinData.escrowSessionId);
-        
+
         if (!escrowSession) {
-          socket.emit('error', { code: 'ESCROW_ERROR', message: 'Escrow session not found' });
+          socket.emit("error", {
+            code: "ESCROW_ERROR",
+            message: "Escrow session not found",
+          });
           return;
         }
 
-        if (escrowSession.status !== 'CONFIRMED') {
-          socket.emit('error', { code: 'ESCROW_ERROR', message: `Invalid escrow status: ${escrowSession.status}` });
+        if (escrowSession.status !== "CONFIRMED") {
+          socket.emit("error", {
+            code: "ESCROW_ERROR",
+            message: `Invalid escrow status: ${escrowSession.status}`,
+          });
           return;
         }
 
         if (escrowSession.playerAddress !== joinData.address) {
-          socket.emit('error', { code: 'ESCROW_ERROR', message: 'Escrow session address mismatch' });
+          socket.emit("error", {
+            code: "ESCROW_ERROR",
+            message: "Escrow session address mismatch",
+          });
           return;
         }
 
         if (escrowSession.tableId !== joinData.tableId) {
-          socket.emit('error', { code: 'ESCROW_ERROR', message: 'Escrow session table mismatch' });
+          socket.emit("error", {
+            code: "ESCROW_ERROR",
+            message: "Escrow session table mismatch",
+          });
           return;
         }
 
         if (escrowSession.seatIndex !== joinData.seatIndex) {
-          socket.emit('error', { code: 'ESCROW_ERROR', message: 'Escrow session seat mismatch' });
+          socket.emit("error", {
+            code: "ESCROW_ERROR",
+            message: "Escrow session seat mismatch",
+          });
           return;
         }
 
         if (escrowSession.buyInAmount !== joinData.buyIn) {
-          socket.emit('error', { code: 'ESCROW_ERROR', message: 'Escrow session amount mismatch' });
+          socket.emit("error", {
+            code: "ESCROW_ERROR",
+            message: "Escrow session amount mismatch",
+          });
           return;
         }
 
         // Mark escrow session as playing
         await startPlaying(joinData.escrowSessionId);
-        console.log(`[Escrow] Session ${joinData.escrowSessionId} started playing`);
+        console.log(
+          `[Escrow] Session ${joinData.escrowSessionId} started playing`,
+        );
       }
 
       const result = await tableManager.joinTable(joinData, socket.id);
 
       if (!result.success) {
-        socket.emit('error', { code: 'JOIN_FAILED', message: result.error });
+        socket.emit("error", { code: "JOIN_FAILED", message: result.error });
         return;
       }
 
@@ -503,7 +623,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       socket.join(joinData.tableId);
 
       // Notify all players at table about new player
-      io.to(joinData.tableId).emit('player-joined', {
+      io.to(joinData.tableId).emit("player-joined", {
         player: { ...result.player!, holeCards: null },
         seatIndex: joinData.seatIndex,
       });
@@ -512,7 +632,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       broadcastTableState(io, table);
 
       // Update lobby table list for all clients
-      io.emit('tables-list', tableManager.getAllTables());
+      io.emit("tables-list", tableManager.getAllTables());
 
       // Check if we can start a hand (with lock to prevent race)
       const activePlayers = tableManager.getActivePlayers(joinData.tableId);
@@ -522,21 +642,29 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
         if (!table.createdBy) {
           startNewHand(io, tableManager, joinData.tableId);
         } else {
-          console.log(`[Game] Table ${joinData.tableId} has creator ${table.createdBy}, waiting for manual start.`);
+          console.log(
+            `[Game] Table ${joinData.tableId} has creator ${table.createdBy}, waiting for manual start.`,
+          );
         }
       }
     });
 
     // Leave table
-    socket.on('leave-table', async (data: unknown) => {
+    socket.on("leave-table", async (data: unknown) => {
       if (!rateLimiter.isActionAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        socket.emit("error", {
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+        });
         return;
       }
 
       const validation = validateLeaveTableData(data);
       if (!validation.valid) {
-        socket.emit('error', { code: 'INVALID_DATA', message: validation.error });
+        socket.emit("error", {
+          code: "INVALID_DATA",
+          message: validation.error,
+        });
         return;
       }
 
@@ -544,11 +672,17 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       const playerInfo = tableManager.getPlayerBySocketId(socket.id);
 
       if (!playerInfo || playerInfo.tableId !== tableId) {
-        socket.emit('error', { code: 'NOT_AT_TABLE', message: 'Not at this table' });
+        socket.emit("error", {
+          code: "NOT_AT_TABLE",
+          message: "Not at this table",
+        });
         return;
       }
 
-      const result = await tableManager.leaveTable(tableId, playerInfo.player.id);
+      const result = await tableManager.leaveTable(
+        tableId,
+        playerInfo.player.id,
+      );
       if (result.success) {
         // Cleanup address -> table mapping
         const playerAddress = playerInfo.player.address;
@@ -564,7 +698,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
         actionValidator.clear(playerInfo.player.id);
 
         socket.leave(tableId);
-        io.to(tableId).emit('player-left', {
+        io.to(tableId).emit("player-left", {
           playerId: playerInfo.player.id,
           seatIndex: playerInfo.player.seatIndex,
         });
@@ -575,20 +709,23 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
           broadcastTableState(io, table);
         }
 
-        io.emit('tables-list', tableManager.getAllTables());
+        io.emit("tables-list", tableManager.getAllTables());
       }
     });
 
     // Rejoin table after reconnect
-    socket.on('rejoin-table', (data: unknown) => {
+    socket.on("rejoin-table", (data: unknown) => {
       if (!rateLimiter.isActionAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        socket.emit("error", {
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+        });
         return;
       }
 
       const validation = validateRejoinData(data);
       if (!validation.valid) {
-        socket.emit('rejoin-failed', { message: validation.error });
+        socket.emit("rejoin-failed", { message: validation.error });
         return;
       }
 
@@ -596,14 +733,14 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       const table = tableManager.getTable(tableId);
 
       if (!table) {
-        socket.emit('rejoin-failed', { message: 'Table not found' });
+        socket.emit("rejoin-failed", { message: "Table not found" });
         return;
       }
 
       // Find player by address
       const player = table.players.find((p) => p?.address === address);
       if (!player) {
-        socket.emit('rejoin-failed', { message: 'Not seated at this table' });
+        socket.emit("rejoin-failed", { message: "Not seated at this table" });
         return;
       }
 
@@ -611,23 +748,25 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       player.socketId = socket.id;
       player.isConnected = true;
       // Only set to active if not folded or all-in
-      if (player.status === 'sitting-out') {
-        player.status = 'active';
+      if (player.status === "sitting-out") {
+        player.status = "active";
       }
 
       // Join socket room
       socket.join(tableId);
 
-      console.log(`[Socket] Player ${player.name} rejoined table ${table.name}`);
+      console.log(
+        `[Socket] Player ${player.name} rejoined table ${table.name}`,
+      );
 
       // Send table state with player's hole cards
-      socket.emit('rejoin-success', {
+      socket.emit("rejoin-success", {
         table: sanitizeTableForPlayer(table, player.id),
         yourCards: player.holeCards,
       });
 
       // Notify other players
-      io.to(tableId).emit('player-reconnected', {
+      io.to(tableId).emit("player-reconnected", {
         playerId: player.id,
         seatIndex: player.seatIndex,
       });
@@ -635,28 +774,40 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
       // Send updated table state to all other players
       for (const p of table.players) {
         if (p && p.isConnected && p.id !== player.id) {
-          io.to(p.socketId).emit('table-state', sanitizeTableForPlayer(table, p.id));
+          io.to(p.socketId).emit(
+            "table-state",
+            sanitizeTableForPlayer(table, p.id),
+          );
         }
       }
     });
 
     // Player action
-    socket.on('player-action', (data: unknown) => {
+    socket.on("player-action", (data: unknown) => {
       // Security: Check if client is blocked
       if (violationLimiter.isBlocked(socket.id)) {
-        socket.emit('error', { code: 'BLOCKED', message: 'Too many violations. Please wait.' });
+        socket.emit("error", {
+          code: "BLOCKED",
+          message: "Too many violations. Please wait.",
+        });
         return;
       }
 
       if (!rateLimiter.isActionAllowed(socket.id, clientIP)) {
-        socket.emit('error', { code: 'RATE_LIMITED', message: 'Too many requests' });
+        socket.emit("error", {
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+        });
         return;
       }
 
       const validation = validatePlayerActionData(data);
       if (!validation.valid) {
         violationLimiter.recordViolation(socket.id);
-        socket.emit('error', { code: 'INVALID_DATA', message: validation.error });
+        socket.emit("error", {
+          code: "INVALID_DATA",
+          message: validation.error,
+        });
         return;
       }
 
@@ -665,25 +816,33 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
 
       if (!playerInfo || playerInfo.tableId !== actionData.tableId) {
         violationLimiter.recordViolation(socket.id);
-        socket.emit('error', { code: 'NOT_AT_TABLE', message: 'Not at this table' });
+        socket.emit("error", {
+          code: "NOT_AT_TABLE",
+          message: "Not at this table",
+        });
         return;
       }
 
       // Security: Bot detection - check action timing
       if (!actionValidator.validateTiming(playerInfo.player.id)) {
-        console.log(`[Security] Suspicious fast action from player ${playerInfo.player.id}`);
+        console.log(
+          `[Security] Suspicious fast action from player ${playerInfo.player.id}`,
+        );
         // Don't block, just log for now - could be legitimate fast player
       }
 
       const table = tableManager.getTable(actionData.tableId);
       if (!table || !table.currentHand) {
-        socket.emit('error', { code: 'NO_HAND', message: 'No active hand' });
+        socket.emit("error", { code: "NO_HAND", message: "No active hand" });
         return;
       }
 
       // Acquire lock to prevent race conditions
       if (!acquireHandLock(actionData.tableId)) {
-        socket.emit('error', { code: 'BUSY', message: 'Processing another action' });
+        socket.emit("error", {
+          code: "BUSY",
+          message: "Processing another action",
+        });
         return;
       }
 
@@ -693,11 +852,14 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
           table,
           playerInfo.player.id,
           actionData.action,
-          actionData.amount
+          actionData.amount,
         );
 
         if (!result.success) {
-          socket.emit('error', { code: 'INVALID_ACTION', message: result.error });
+          socket.emit("error", {
+            code: "INVALID_ACTION",
+            message: result.error,
+          });
           return;
         }
 
@@ -705,21 +867,25 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
         gameManager.clearTurnTimeout();
 
         // Broadcast action to all players
-        io.to(actionData.tableId).emit('player-acted', {
+        io.to(actionData.tableId).emit("player-acted", {
           playerId: playerInfo.player.id,
-          action: table.currentHand.actions[table.currentHand.actions.length - 1],
+          action:
+            table.currentHand.actions[table.currentHand.actions.length - 1],
         });
 
         // Check if hand is over
         const activePlayers = table.players.filter(
-          (p) => p !== null && p.status !== 'folded' && p.status !== 'sitting-out'
+          (p) =>
+            p !== null && p.status !== "folded" && p.status !== "sitting-out",
         );
 
         if (activePlayers.length === 1) {
           // Single winner - award pot
           const winner = activePlayers[0]!;
           const potAmount = table.currentHand.pot;
-          const communityCards = table.currentHand.communityCards.map((c) => `${c.rank}${c.suit}`);
+          const communityCards = table.currentHand.communityCards.map(
+            (c) => `${c.rank}${c.suit}`,
+          );
           const dealerSeat = table.currentHand.dealerIndex;
 
           winner.stack += potAmount;
@@ -729,18 +895,29 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
               {
                 playerId: winner.id,
                 amount: potAmount,
-                hand: { rank: 'high-card', rankValue: 1, name: 'Winner by fold', cards: [], score: 0 },
+                hand: {
+                  rank: "high-card",
+                  rankValue: 1,
+                  name: "Winner by fold",
+                  cards: [],
+                  score: 0,
+                },
               },
             ],
             showdown: [],
           };
 
-          io.to(actionData.tableId).emit('hand-ended', { result: handResult });
+          io.to(actionData.tableId).emit("hand-ended", { result: handResult });
 
           // Save hand history
           const startingStacks = handStartingStacks.get(actionData.tableId);
           if (startingStacks) {
-            settleGameWallets(tableManager, table, handResult, startingStacks).catch(console.error);
+            settleGameWallets(
+              tableManager,
+              table,
+              handResult,
+              startingStacks,
+            ).catch(console.error);
             saveHandHistory(
               actionData.tableId,
               table,
@@ -750,7 +927,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
               dealerSeat,
               (dealerSeat + 1) % table.maxPlayers,
               (dealerSeat + 2) % table.maxPlayers,
-              startingStacks
+              startingStacks,
             ).catch(console.error);
           }
 
@@ -758,24 +935,36 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
           table.currentHand = null;
 
           // Start new hand after delay
-          setTimeout(() => startNewHand(io, tableManager, actionData.tableId), 3000);
+          setTimeout(
+            () => startNewHand(io, tableManager, actionData.tableId),
+            3000,
+          );
           return;
         }
 
-        if (table.currentHand.stage === 'showdown') {
+        if (table.currentHand.stage === "showdown") {
           // Evaluate showdown
-          const communityCards = table.currentHand.communityCards.map((c) => `${c.rank}${c.suit}`);
+          const communityCards = table.currentHand.communityCards.map(
+            (c) => `${c.rank}${c.suit}`,
+          );
           const potAmount = table.currentHand.pot;
           const dealerSeat = table.currentHand.dealerIndex;
 
           const handResult = gameManager.evaluateShowdown(table);
           if (handResult) {
-            io.to(actionData.tableId).emit('hand-ended', { result: handResult });
+            io.to(actionData.tableId).emit("hand-ended", {
+              result: handResult,
+            });
 
             // Save hand history
             const startingStacks = handStartingStacks.get(actionData.tableId);
             if (startingStacks) {
-              settleGameWallets(tableManager, table, handResult, startingStacks).catch(console.error);
+              settleGameWallets(
+                tableManager,
+                table,
+                handResult,
+                startingStacks,
+              ).catch(console.error);
               saveHandHistory(
                 actionData.tableId,
                 table,
@@ -785,7 +974,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
                 dealerSeat,
                 (dealerSeat + 1) % table.maxPlayers,
                 (dealerSeat + 2) % table.maxPlayers,
-                startingStacks
+                startingStacks,
               ).catch(console.error);
             }
 
@@ -793,7 +982,10 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
             table.currentHand = null;
 
             // Start new hand after delay
-            setTimeout(() => startNewHand(io, tableManager, actionData.tableId), 5000);
+            setTimeout(
+              () => startNewHand(io, tableManager, actionData.tableId),
+              5000,
+            );
           }
           return;
         }
@@ -803,8 +995,8 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
 
         // Notify next player and start turn timer
         const nextPlayer = table.players[table.currentHand.activePlayerIndex];
-        if (nextPlayer && nextPlayer.status === 'active') {
-          io.to(actionData.tableId).emit('turn-changed', {
+        if (nextPlayer && nextPlayer.status === "active") {
+          io.to(actionData.tableId).emit("turn-changed", {
             playerId: nextPlayer.id,
             timeRemaining: TURN_TIMEOUT_MS / 1000,
           });
@@ -818,7 +1010,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
     });
 
     // Handle disconnect
-    socket.on('disconnect', async () => {
+    socket.on("disconnect", async () => {
       console.log(`Client disconnected: ${socket.id}`);
 
       // Clean up rate limiter
@@ -836,7 +1028,7 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
         // Mark player as disconnected but don't remove immediately
         tableManager.updatePlayerConnection(socket.id, false);
 
-        io.to(playerInfo.tableId).emit('player-disconnected', {
+        io.to(playerInfo.tableId).emit("player-disconnected", {
           playerId: playerInfo.player.id,
           seatIndex: playerInfo.player.seatIndex,
         });
@@ -856,17 +1048,22 @@ export function setupSocketHandlers(io: Server, tableManager: TableManager): voi
           const table = tableManager.getTable(disconnectedTableId);
           if (!table) return;
 
-          const player = table.players.find((p) => p?.id === disconnectedPlayerId);
+          const player = table.players.find(
+            (p) => p?.id === disconnectedPlayerId,
+          );
           if (player && !player.isConnected) {
-            await tableManager.leaveTable(disconnectedTableId, disconnectedPlayerId);
-            io.to(disconnectedTableId).emit('player-left', {
+            await tableManager.leaveTable(
+              disconnectedTableId,
+              disconnectedPlayerId,
+            );
+            io.to(disconnectedTableId).emit("player-left", {
               playerId: disconnectedPlayerId,
               seatIndex: player.seatIndex,
             });
 
             // Send updated table state to remaining players
             broadcastTableState(io, table);
-            io.emit('tables-list', tableManager.getAllTables());
+            io.emit("tables-list", tableManager.getAllTables());
           }
         }, DISCONNECT_GRACE_MS);
       }
@@ -879,7 +1076,7 @@ function setTurnTimeout(
   io: Server,
   tableManager: TableManager,
   tableId: string,
-  playerId: string
+  playerId: string,
 ): void {
   const gameManager = getGameManager(tableId);
 
@@ -894,27 +1091,31 @@ function setTurnTimeout(
       const table = tableManager.getTable(tableId);
       if (!table?.currentHand) return;
 
-      const currentActivePlayer = table.players[table.currentHand.activePlayerIndex];
+      const currentActivePlayer =
+        table.players[table.currentHand.activePlayerIndex];
       if (!currentActivePlayer || currentActivePlayer.id !== playerId) return;
 
       // Auto-fold on timeout
-      const foldResult = gameManager.processAction(table, playerId, 'fold');
+      const foldResult = gameManager.processAction(table, playerId, "fold");
       if (!foldResult.success) return;
 
-      io.to(tableId).emit('player-acted', {
+      io.to(tableId).emit("player-acted", {
         playerId,
-        action: { playerId, type: 'fold', timestamp: Date.now() },
+        action: { playerId, type: "fold", timestamp: Date.now() },
       });
 
       // Check if hand ended after auto-fold
       const remainingPlayers = table.players.filter(
-        (p) => p !== null && p.status !== 'folded' && p.status !== 'sitting-out'
+        (p) =>
+          p !== null && p.status !== "folded" && p.status !== "sitting-out",
       );
 
       if (remainingPlayers.length === 1) {
         const winner = remainingPlayers[0]!;
         const potAmount = table.currentHand!.pot;
-        const communityCards = table.currentHand!.communityCards.map((c) => `${c.rank}${c.suit}`);
+        const communityCards = table.currentHand!.communityCards.map(
+          (c) => `${c.rank}${c.suit}`,
+        );
         const dealerSeat = table.currentHand!.dealerIndex;
 
         winner.stack += potAmount;
@@ -924,18 +1125,29 @@ function setTurnTimeout(
             {
               playerId: winner.id,
               amount: potAmount,
-              hand: { rank: 'high-card', rankValue: 1, name: 'Winner by fold', cards: [], score: 0 },
+              hand: {
+                rank: "high-card",
+                rankValue: 1,
+                name: "Winner by fold",
+                cards: [],
+                score: 0,
+              },
             },
           ],
           showdown: [],
         };
 
-        io.to(tableId).emit('hand-ended', { result: handResult });
+        io.to(tableId).emit("hand-ended", { result: handResult });
 
         // Save hand history
         const startingStacks = handStartingStacks.get(tableId);
         if (startingStacks) {
-          settleGameWallets(tableManager, table, handResult, startingStacks).catch(console.error);
+          settleGameWallets(
+            tableManager,
+            table,
+            handResult,
+            startingStacks,
+          ).catch(console.error);
           saveHandHistory(
             tableId,
             table,
@@ -945,7 +1157,7 @@ function setTurnTimeout(
             dealerSeat,
             (dealerSeat + 1) % table.maxPlayers,
             (dealerSeat + 2) % table.maxPlayers,
-            startingStacks
+            startingStacks,
           ).catch(console.error);
         }
 
@@ -956,9 +1168,10 @@ function setTurnTimeout(
         broadcastTableState(io, table);
 
         // Set next turn timer
-        const nextActivePlayer = table.players[table.currentHand.activePlayerIndex];
-        if (nextActivePlayer && nextActivePlayer.status === 'active') {
-          io.to(tableId).emit('turn-changed', {
+        const nextActivePlayer =
+          table.players[table.currentHand.activePlayerIndex];
+        if (nextActivePlayer && nextActivePlayer.status === "active") {
+          io.to(tableId).emit("turn-changed", {
             playerId: nextActivePlayer.id,
             timeRemaining: TURN_TIMEOUT_MS / 1000,
           });
@@ -976,7 +1189,11 @@ function setTurnTimeout(
 // Track starting stacks for hand history
 const handStartingStacks: Map<string, Map<string, number>> = new Map();
 
-function startNewHand(io: Server, tableManager: TableManager, tableId: string): void {
+function startNewHand(
+  io: Server,
+  tableManager: TableManager,
+  tableId: string,
+): void {
   // Acquire lock to prevent multiple startNewHand calls
   if (!acquireHandLock(tableId)) {
     return;
@@ -995,22 +1212,26 @@ function startNewHand(io: Server, tableManager: TableManager, tableId: string): 
       const player = table.players[i];
       if (player && player.stack <= 0) {
         console.log(
-          `[Game] Player ${player.name} is busted (stack: ${player.stack}), kicking from table`
+          `[Game] Player ${player.name} is busted (stack: ${player.stack}), kicking from table`,
         );
         bustedPlayers.push(player);
-        const gameWalletSessionId = tableManager.getGameWalletSessionId(player.id);
+        const gameWalletSessionId = tableManager.getGameWalletSessionId(
+          player.id,
+        );
         if (gameWalletSessionId) {
-          completeSession(gameWalletSessionId, player.stack).catch(console.error);
+          completeSession(gameWalletSessionId, player.stack).catch(
+            console.error,
+          );
         }
 
         // Emit busted event to the player
-        io.to(player.socketId).emit('player-busted', {
+        io.to(player.socketId).emit("player-busted", {
           playerId: player.id,
-          message: 'You ran out of chips! Buy in again to continue playing.',
+          message: "You ran out of chips! Buy in again to continue playing.",
         });
 
         // Emit player left to others
-        io.to(tableId).emit('player-left', {
+        io.to(tableId).emit("player-left", {
           playerId: player.id,
           seatIndex: player.seatIndex,
         });
@@ -1022,26 +1243,33 @@ function startNewHand(io: Server, tableManager: TableManager, tableId: string): 
 
     // Leave table for busted players (async, don't await)
     for (const player of bustedPlayers) {
-      tableManager.leaveTable(tableId, player.id).catch(err => {
-        console.error(`[Game] Failed to process leaveTable for busted player ${player.id}:`, err);
+      tableManager.leaveTable(tableId, player.id).catch((err) => {
+        console.error(
+          `[Game] Failed to process leaveTable for busted player ${player.id}:`,
+          err,
+        );
       });
     }
 
     // Get players with chips who can play
-    const playersWithChips = table.players.filter((p) => p !== null && p.stack > 0 && p.isConnected);
+    const playersWithChips = table.players.filter(
+      (p) => p !== null && p.stack > 0 && p.isConnected,
+    );
 
     // Need at least 2 players with chips to start
     if (playersWithChips.length < 2) {
-      console.log(`[Game] Not enough players with chips (${playersWithChips.length}), waiting...`);
-      io.to(tableId).emit('waiting-for-players', {
-        message: 'Waiting for more players with chips to join...',
+      console.log(
+        `[Game] Not enough players with chips (${playersWithChips.length}), waiting...`,
+      );
+      io.to(tableId).emit("waiting-for-players", {
+        message: "Waiting for more players with chips to join...",
         currentPlayers: playersWithChips.length,
         required: 2,
       });
 
       // Broadcast updated table state
       broadcastTableState(io, table);
-      io.emit('tables-list', tableManager.getAllTables());
+      io.emit("tables-list", tableManager.getAllTables());
       return;
     }
 
@@ -1071,7 +1299,7 @@ function startNewHand(io: Server, tableManager: TableManager, tableId: string): 
     // Send hand started to each player with their hole cards
     for (const player of table.players) {
       if (player && player.isConnected) {
-        io.to(player.socketId).emit('hand-started', {
+        io.to(player.socketId).emit("hand-started", {
           hand: { ...hand, communityCards: [] },
           yourCards: player.holeCards,
         });
@@ -1083,8 +1311,8 @@ function startNewHand(io: Server, tableManager: TableManager, tableId: string): 
 
     // Notify first player to act
     const firstPlayer = table.players[hand.activePlayerIndex];
-    if (firstPlayer && firstPlayer.status === 'active') {
-      io.to(tableId).emit('turn-changed', {
+    if (firstPlayer && firstPlayer.status === "active") {
+      io.to(tableId).emit("turn-changed", {
         playerId: firstPlayer.id,
         timeRemaining: TURN_TIMEOUT_MS / 1000,
       });

@@ -1,7 +1,20 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { Connection, Capability } from '@octwa/sdk';
-import type { Table, Hand, Player, Card } from '@/types/game';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { Connection, Capability } from "@octwa/sdk";
+import type {
+  Table,
+  Hand,
+  Player,
+  Card,
+  ChatMessage,
+  LogEntry,
+  Tournament,
+  TournamentParticipant,
+} from "@/types/game";
+
+// ============================================================
+// Types
+// ============================================================
 
 interface AppError {
   id: string;
@@ -27,40 +40,63 @@ interface UserStats {
   netProfit: number;
 }
 
+// ============================================================
+// Store interface
+// ============================================================
+
 interface Store {
-  // Wallet Connection
+  // ---- Wallet Connection ----
   connected: boolean;
   connection: Connection | null;
   capability: Capability | null;
   octBalance: number | null;
   balanceLoading: boolean;
 
-  // User Profile
+  // ---- User Profile ----
   username: string | null;
   userStats: UserStats | null;
   showUsernameSetup: boolean;
 
-  // Lobby
+  // ---- Lobby ----
   tables: Table[];
   tablesLoading: boolean;
 
-  // Server Config
+  // ---- Server Config ----
   gameWalletEnabled: boolean;
 
-  // Current Game
+  // ---- Current Game ----
   currentTable: Table | null;
   currentHand: Hand | null;
   myPlayer: Player | null;
   myHoleCards: Card[] | null;
-  
-  // Session for auto-rejoin
+
+  // ---- Session for auto-rejoin ----
   lastTableSession: TableSession | null;
 
-  // Socket
+  // ---- Socket ----
   socketConnected: boolean;
 
-  // Errors
+  // ---- Chat & Log ----
+  chatMessages: ChatMessage[];
+  logEntries: LogEntry[];
+  chatMuted: boolean;
+
+  // ---- Waitlist ----
+  isOnWaitlist: boolean;
+  waitlistPosition: number | null;
+
+  // ---- Tournament ----
+  tournaments: Tournament[];
+  tournamentsLoading: boolean;
+  currentTournament: Tournament | null;
+  myTournamentParticipant: TournamentParticipant | null;
+
+  // ---- Errors ----
   errors: AppError[];
+
+  // ============================================================
+  // Actions
+  // ============================================================
 
   // Wallet Actions
   setConnection: (conn: Connection | null) => void;
@@ -93,6 +129,30 @@ interface Store {
   // Socket Actions
   setSocketConnected: (connected: boolean) => void;
 
+  // Chat & Log Actions
+  addChatMessage: (message: ChatMessage) => void;
+  addLogEntry: (entry: LogEntry) => void;
+  setChatMessages: (messages: ChatMessage[]) => void;
+  setLogEntries: (entries: LogEntry[]) => void;
+  clearChat: () => void;
+  clearLog: () => void;
+  setChatMuted: (muted: boolean) => void;
+
+  // Waitlist Actions
+  setIsOnWaitlist: (value: boolean) => void;
+  setWaitlistPosition: (position: number | null) => void;
+
+  // Tournament Actions
+  setTournaments: (tournaments: Tournament[]) => void;
+  setTournamentsLoading: (loading: boolean) => void;
+  addTournament: (tournament: Tournament) => void;
+  updateTournament: (id: string, updates: Partial<Tournament>) => void;
+  removeTournament: (id: string) => void;
+  setCurrentTournament: (tournament: Tournament | null) => void;
+  setMyTournamentParticipant: (
+    participant: TournamentParticipant | null,
+  ) => void;
+
   // Error Actions
   addError: (code: string, message: string) => void;
   clearErrors: () => void;
@@ -107,34 +167,75 @@ interface Store {
   setHasHydrated: (state: boolean) => void;
 }
 
+// ============================================================
+// Initial state
+// ============================================================
+
+const MAX_CHAT_MESSAGES = 500;
+const MAX_LOG_ENTRIES = 1000;
+
 const initialState = {
+  // Wallet
   connected: false,
   connection: null,
   capability: null,
   octBalance: null,
   balanceLoading: false,
+
+  // User
   username: null,
   userStats: null,
   showUsernameSetup: false,
+
+  // Lobby
   tables: [],
   tablesLoading: false,
+
+  // Config
   gameWalletEnabled: false,
+
+  // Game
   currentTable: null,
   currentHand: null,
   myPlayer: null,
   myHoleCards: null,
   lastTableSession: null,
+
+  // Socket
   socketConnected: false,
+
+  // Chat & Log
+  chatMessages: [],
+  logEntries: [],
+  chatMuted: false,
+
+  // Waitlist
+  isOnWaitlist: false,
+  waitlistPosition: null,
+
+  // Tournament
+  tournaments: [],
+  tournamentsLoading: false,
+  currentTournament: null,
+  myTournamentParticipant: null,
+
+  // Errors
   errors: [],
+
+  // Hydration
   _hasHydrated: false,
 };
+
+// ============================================================
+// Store
+// ============================================================
 
 export const useStore = create<Store>()(
   persist(
     (set) => ({
       ...initialState,
 
-      // Wallet Actions
+      // ---- Wallet Actions ----
       setConnection: (conn) =>
         set({
           connected: conn !== null,
@@ -147,12 +248,12 @@ export const useStore = create<Store>()(
 
       setBalanceLoading: (loading) => set({ balanceLoading: loading }),
 
-      // User Profile Actions
+      // ---- User Profile Actions ----
       setUsername: (username) => set({ username }),
       setUserStats: (stats) => set({ userStats: stats }),
       setShowUsernameSetup: (show) => set({ showUsernameSetup: show }),
 
-      // Lobby Actions
+      // ---- Lobby Actions ----
       setTables: (tables) => set({ tables }),
 
       setTablesLoading: (loading) => set({ tablesLoading: loading }),
@@ -165,7 +266,7 @@ export const useStore = create<Store>()(
       updateTable: (tableId, updates) =>
         set((state) => ({
           tables: state.tables.map((t) =>
-            t.id === tableId ? { ...t, ...updates } : t
+            t.id === tableId ? { ...t, ...updates } : t,
           ),
         })),
 
@@ -174,10 +275,10 @@ export const useStore = create<Store>()(
           tables: state.tables.filter((t) => t.id !== tableId),
         })),
 
-      // Server Config Actions
+      // ---- Server Config Actions ----
       setGameWalletEnabled: (enabled) => set({ gameWalletEnabled: enabled }),
 
-      // Game Actions
+      // ---- Game Actions ----
       setCurrentTable: (table) => set({ currentTable: table }),
 
       setCurrentHand: (hand) => set({ currentHand: hand }),
@@ -185,13 +286,83 @@ export const useStore = create<Store>()(
       setMyPlayer: (player) => set({ myPlayer: player }),
 
       setMyHoleCards: (cards) => set({ myHoleCards: cards }),
-      
+
       setLastTableSession: (session) => set({ lastTableSession: session }),
 
-      // Socket Actions
+      // ---- Socket Actions ----
       setSocketConnected: (connected) => set({ socketConnected: connected }),
 
-      // Error Actions
+      // ---- Chat & Log Actions ----
+      addChatMessage: (message) =>
+        set((state) => {
+          const updated = [...state.chatMessages, message];
+          // Cap at max to prevent memory leak
+          if (updated.length > MAX_CHAT_MESSAGES) {
+            return { chatMessages: updated.slice(-MAX_CHAT_MESSAGES) };
+          }
+          return { chatMessages: updated };
+        }),
+
+      addLogEntry: (entry) =>
+        set((state) => {
+          const updated = [...state.logEntries, entry];
+          if (updated.length > MAX_LOG_ENTRIES) {
+            return { logEntries: updated.slice(-MAX_LOG_ENTRIES) };
+          }
+          return { logEntries: updated };
+        }),
+
+      setChatMessages: (messages) => set({ chatMessages: messages }),
+
+      setLogEntries: (entries) => set({ logEntries: entries }),
+
+      clearChat: () => set({ chatMessages: [] }),
+
+      clearLog: () => set({ logEntries: [] }),
+
+      setChatMuted: (muted) => set({ chatMuted: muted }),
+
+      // ---- Waitlist Actions ----
+      setIsOnWaitlist: (value) => set({ isOnWaitlist: value }),
+
+      setWaitlistPosition: (position) => set({ waitlistPosition: position }),
+
+      // ---- Tournament Actions ----
+      setTournaments: (tournaments) => set({ tournaments }),
+
+      setTournamentsLoading: (loading) => set({ tournamentsLoading: loading }),
+
+      addTournament: (tournament) =>
+        set((state) => ({
+          tournaments: [...state.tournaments, tournament],
+        })),
+
+      updateTournament: (id, updates) =>
+        set((state) => ({
+          tournaments: state.tournaments.map((t) =>
+            t.id === id ? { ...t, ...updates } : t,
+          ),
+          // Also update currentTournament if it's the one being modified
+          currentTournament:
+            state.currentTournament?.id === id
+              ? { ...state.currentTournament, ...updates }
+              : state.currentTournament,
+        })),
+
+      removeTournament: (id) =>
+        set((state) => ({
+          tournaments: state.tournaments.filter((t) => t.id !== id),
+          currentTournament:
+            state.currentTournament?.id === id ? null : state.currentTournament,
+        })),
+
+      setCurrentTournament: (tournament) =>
+        set({ currentTournament: tournament }),
+
+      setMyTournamentParticipant: (participant) =>
+        set({ myTournamentParticipant: participant }),
+
+      // ---- Error Actions ----
       addError: (code, message) =>
         set((state) => ({
           errors: [
@@ -217,24 +388,26 @@ export const useStore = create<Store>()(
           errors: state.errors.filter((e) => e.id !== id),
         })),
 
-      // Reset
+      // ---- Reset ----
       reset: () => set(initialState),
 
-      // Hydration
+      // ---- Hydration ----
       setHasHydrated: (state) => set({ _hasHydrated: state }),
     }),
     {
-      name: 'oct-poker-storage',
+      name: "oct-poker-storage",
       partialize: (state) => ({
+        // Only persist essential session data
         connection: state.connection,
         connected: state.connected,
         capability: state.capability,
         username: state.username,
         lastTableSession: state.lastTableSession,
+        chatMuted: state.chatMuted,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
-    }
-  )
+    },
+  ),
 );

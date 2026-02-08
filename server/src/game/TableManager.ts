@@ -1,11 +1,23 @@
-import { v4 as uuidv4 } from 'uuid';
-import type { Table, Player, CreateTableData, JoinTableData } from '../types/index.js';
-import { UserRepository, TableRepository, TransactionRepository } from '../db/repositories/index.js';
-import { completeSession } from '../gameWallet/index.js';
+import { v4 as uuidv4 } from "uuid";
+import type {
+  Table,
+  Player,
+  CreateTableData,
+  JoinTableData,
+} from "../types/index.js";
+import {
+  UserRepository,
+  TableRepository,
+  TransactionRepository,
+} from "../db/repositories/index.js";
+import { completeSession } from "../gameWallet/index.js";
 
 export class TableManager {
   private tables: Map<string, Table> = new Map();
-  private playerSessions: Map<string, { socketId: string; tableId: string | null }> = new Map();
+  private playerSessions: Map<
+    string,
+    { socketId: string; tableId: string | null }
+  > = new Map();
   // Map playerId to database userId
   private playerUserMap: Map<string, string> = new Map();
   private playerGameWalletSessions: Map<string, string> = new Map();
@@ -25,6 +37,9 @@ export class TableManager {
         players: new Array(dbTable.maxPlayers).fill(null),
         currentHand: null,
         createdBy: dbTable.createdBy || undefined,
+        mode: "cash",
+        waitlist: [],
+        handCount: 0,
       };
 
       if (dbTable.createdBy) {
@@ -33,7 +48,7 @@ export class TableManager {
           table.creatorAddress = creator.address;
         }
       }
-      
+
       // Load active sessions for this table
       const sessions = await TableRepository.getActiveSessions(dbTable.id);
       for (const session of sessions) {
@@ -46,28 +61,38 @@ export class TableManager {
             stack: session.currentStack,
             holeCards: null,
             bet: 0,
-            status: 'sitting-out', // Mark as sitting out until they reconnect
+            status: "sitting-out", // Mark as sitting out until they reconnect
             seatIndex: session.seatIndex,
             isConnected: false,
-            socketId: '',
+            socketId: "",
+            lastActionAt: Date.now(),
+            joinedAt: Date.now(),
           };
           table.players[session.seatIndex] = player;
           this.playerUserMap.set(player.id, user.id);
         }
       }
-      
+
       this.tables.set(table.id, table);
     }
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[TableManager] Loaded ${this.tables.size} tables from database`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `[TableManager] Loaded ${this.tables.size} tables from database`,
+      );
     }
   }
 
-  async createTable(data: CreateTableData, creatorAddress?: string): Promise<Table> {
+  async createTable(
+    data: CreateTableData,
+    creatorAddress?: string,
+  ): Promise<Table> {
     // Get or create user if creator address provided
     let createdBy: string | undefined;
     if (creatorAddress) {
-      const user = await UserRepository.findOrCreate(creatorAddress, `Player ${creatorAddress.slice(0, 6)}`);
+      const user = await UserRepository.findOrCreate(
+        creatorAddress,
+        `Player ${creatorAddress.slice(0, 6)}`,
+      );
       createdBy = user.id;
     }
 
@@ -94,6 +119,9 @@ export class TableManager {
       currentHand: null,
       createdBy,
       creatorAddress,
+      mode: "cash",
+      waitlist: [],
+      handCount: 0,
     };
 
     this.tables.set(table.id, table);
@@ -105,10 +133,10 @@ export class TableManager {
   }
 
   getAllTables(): Table[] {
-    return Array.from(this.tables.values()).map(table => ({
+    return Array.from(this.tables.values()).map((table) => ({
       ...table,
       // Hide hole cards in public table list
-      players: table.players.map(p => p ? { ...p, holeCards: null } : null),
+      players: table.players.map((p) => (p ? { ...p, holeCards: null } : null)),
     }));
   }
 
@@ -121,28 +149,36 @@ export class TableManager {
     return this.tables.delete(tableId);
   }
 
-  async joinTable(data: JoinTableData, socketId: string): Promise<{ success: boolean; error?: string; player?: Player }> {
+  async joinTable(
+    data: JoinTableData,
+    socketId: string,
+  ): Promise<{ success: boolean; error?: string; player?: Player }> {
     const table = this.tables.get(data.tableId);
     if (!table) {
-      return { success: false, error: 'Table not found' };
+      return { success: false, error: "Table not found" };
     }
 
     if (data.seatIndex < 0 || data.seatIndex >= table.maxPlayers) {
-      return { success: false, error: 'Invalid seat index' };
+      return { success: false, error: "Invalid seat index" };
     }
 
     if (table.players[data.seatIndex] !== null) {
-      return { success: false, error: 'Seat is taken' };
+      return { success: false, error: "Seat is taken" };
     }
 
     if (data.buyIn < table.minBuyIn || data.buyIn > table.maxBuyIn) {
-      return { success: false, error: `Buy-in must be between ${table.minBuyIn} and ${table.maxBuyIn}` };
+      return {
+        success: false,
+        error: `Buy-in must be between ${table.minBuyIn} and ${table.maxBuyIn}`,
+      };
     }
 
     // Check if player is already at this table
-    const existingPlayer = table.players.find(p => p?.address === data.address);
+    const existingPlayer = table.players.find(
+      (p) => p?.address === data.address,
+    );
     if (existingPlayer) {
-      return { success: false, error: 'Already seated at this table' };
+      return { success: false, error: "Already seated at this table" };
     }
 
     // Get or create user in database
@@ -160,7 +196,7 @@ export class TableManager {
     await TransactionRepository.create({
       userId: user.id,
       tableId: data.tableId,
-      type: 'buy_in',
+      type: "buy_in",
       amount: data.buyIn,
     });
 
@@ -171,10 +207,12 @@ export class TableManager {
       stack: data.buyIn,
       holeCards: null,
       bet: 0,
-      status: 'active',
+      status: "active",
       seatIndex: data.seatIndex,
       isConnected: true,
       socketId,
+      lastActionAt: Date.now(),
+      joinedAt: Date.now(),
     };
 
     table.players[data.seatIndex] = player;
@@ -187,13 +225,16 @@ export class TableManager {
     return { success: true, player };
   }
 
-  async leaveTable(tableId: string, playerId: string): Promise<{ success: boolean; stack?: number }> {
+  async leaveTable(
+    tableId: string,
+    playerId: string,
+  ): Promise<{ success: boolean; stack?: number }> {
     const table = this.tables.get(tableId);
     if (!table) {
       return { success: false };
     }
 
-    const playerIndex = table.players.findIndex(p => p?.id === playerId);
+    const playerIndex = table.players.findIndex((p) => p?.id === playerId);
     if (playerIndex === -1) {
       return { success: false };
     }
@@ -215,7 +256,7 @@ export class TableManager {
         await TransactionRepository.create({
           userId,
           tableId,
-          type: 'cash_out',
+          type: "cash_out",
           amount: stack,
         });
       }
@@ -224,7 +265,10 @@ export class TableManager {
         await completeSession(gameWalletSessionId, stack);
       }
     } catch (error) {
-      console.error(`[TableManager] Error during leaveTable DB updates for player ${playerId}:`, error);
+      console.error(
+        `[TableManager] Error during leaveTable DB updates for player ${playerId}:`,
+        error,
+      );
       // We continue to remove the player from memory even if DB updates fail
       // to prevent "stuck" seats.
     } finally {
@@ -241,9 +285,11 @@ export class TableManager {
     return { success: true, stack };
   }
 
-  getPlayerBySocketId(socketId: string): { player: Player; tableId: string } | null {
+  getPlayerBySocketId(
+    socketId: string,
+  ): { player: Player; tableId: string } | null {
     for (const [tableId, table] of this.tables) {
-      const player = table.players.find(p => p?.socketId === socketId);
+      const player = table.players.find((p) => p?.socketId === socketId);
       if (player) {
         return { player, tableId };
       }
@@ -253,7 +299,7 @@ export class TableManager {
 
   updatePlayerConnection(socketId: string, connected: boolean): void {
     for (const table of this.tables.values()) {
-      const player = table.players.find(p => p?.socketId === socketId);
+      const player = table.players.find((p) => p?.socketId === socketId);
       if (player) {
         player.isConnected = connected;
         break;
@@ -264,15 +310,17 @@ export class TableManager {
   getActivePlayers(tableId: string): Player[] {
     const table = this.tables.get(tableId);
     if (!table) return [];
-    return table.players.filter((p): p is Player => p !== null && p.status !== 'sitting-out');
+    return table.players.filter(
+      (p): p is Player => p !== null && p.status !== "sitting-out",
+    );
   }
 
   getAvailableSeats(tableId: string): number[] {
     const table = this.tables.get(tableId);
     if (!table) return [];
     return table.players
-      .map((p, i) => p === null ? i : -1)
-      .filter(i => i !== -1);
+      .map((p, i) => (p === null ? i : -1))
+      .filter((i) => i !== -1);
   }
 
   // Update player stack in database
@@ -282,7 +330,7 @@ export class TableManager {
 
     // Find the player's table
     for (const [tableId, table] of this.tables) {
-      const player = table.players.find(p => p?.id === playerId);
+      const player = table.players.find((p) => p?.id === playerId);
       if (player) {
         player.stack = stack;
         const session = await TableRepository.getActiveSession(tableId, userId);
